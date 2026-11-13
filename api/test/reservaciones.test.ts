@@ -46,6 +46,9 @@ function repositorioFalso(capturas: Capturas): RepositorioReservaciones {
     async listarDelDia() {
       return [reserva];
     },
+    async listarSemana() {
+      return [reserva];
+    },
     async crear(uid, espacioId, inicio, fin) {
       capturas.creacion = { espacioId, inicio, fin };
       return { ...reserva, espacioId, inicio: inicio.toISOString(), fin: fin.toISOString() };
@@ -91,15 +94,15 @@ describe('reglas de la franja horaria', () => {
     ).not.toThrow();
   });
 
-  it('rechaza menos de 30 minutos', () => {
+  it('exige bloques de 10 minutos', () => {
     expect(() =>
-      validarFranja(new Date('2030-01-15T15:00:00.000Z'), new Date('2030-01-15T15:10:00.000Z')),
-    ).toThrowError(/al menos 30 minutos/);
+      validarFranja(new Date('2030-01-15T15:00:00.000Z'), new Date('2030-01-15T15:05:00.000Z')),
+    ).toThrowError(/bloques de 10 minutos/);
   });
 
   it('rechaza más de 2 horas', () => {
     expect(() =>
-      validarFranja(new Date('2030-01-15T15:00:00.000Z'), new Date('2030-01-15T18:30:00.000Z')),
+      validarFranja(new Date('2030-01-15T15:00:00.000Z'), new Date('2030-01-15T18:00:00.000Z')),
     ).toThrowError(/más de 120 minutos/);
   });
 
@@ -107,7 +110,7 @@ describe('reglas de la franja horaria', () => {
     // 03:00 UTC = 22:00 en Bogotá.
     expect(() =>
       validarFranja(new Date('2030-01-15T03:00:00.000Z'), new Date('2030-01-15T04:00:00.000Z')),
-    ).toThrowError(/07:00 a 20:00/);
+    ).toThrowError(/06:00 a 20:00/);
   });
 
   it('rechaza reservas en el pasado', () => {
@@ -156,6 +159,20 @@ describe('rutas de reservaciones', () => {
     });
 
     expect(respuesta.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('lista una semana completa de disponibilidad', async () => {
+    const app = await crearApp();
+    const respuesta = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reservaciones/semana?desde=2030-01-14',
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.json()).toMatchObject({ desde: '2030-01-14', hasta: '2030-01-20' });
+    expect(respuesta.json().reservas).toHaveLength(1);
     await app.close();
   });
 

@@ -27,13 +27,20 @@ export interface Reservacion {
 export interface RepositorioReservaciones {
   listarEspacios(): Promise<EspacioReservable[]>;
   listarDelDia(fecha: string): Promise<Reservacion[]>;
+  listarSemana(desde: string): Promise<Reservacion[]>;
   crear(uidFirebase: string, espacioId: string, inicio: Date, fin: Date): Promise<Reservacion>;
   cancelar(uidFirebase: string, reservacionId: string, puedeCancelarAjeno: boolean): Promise<void>;
   mias(uidFirebase: string): Promise<Reservacion[]>;
   todas(): Promise<Reservacion[]>;
 }
 
-export const HORARIO = { apertura: 7, cierre: 20, duracionMinima: 30, duracionMaxima: 120 };
+export const HORARIO = {
+  apertura: 6,
+  cierre: 20,
+  duracionMinima: 10,
+  duracionMaxima: 120,
+  pasoMinutos: 10,
+};
 const OFFSET_BOGOTA_MS = -5 * 60 * 60 * 1000;
 
 const CONSULTA = `
@@ -77,6 +84,12 @@ function aReservacion(fila: FilaReservacion): Reservacion {
 export function validarFranja(inicio: Date, fin: Date, ahora: Date = new Date()): void {
   if (!(fin > inicio)) throw errores.datosInvalidos('La hora de fin debe ser posterior al inicio');
   const minutos = (fin.getTime() - inicio.getTime()) / 60_000;
+  const paso = HORARIO.pasoMinutos;
+  const minutosInicio = new Date(inicio.getTime() + OFFSET_BOGOTA_MS);
+  const minutosFin = new Date(fin.getTime() + OFFSET_BOGOTA_MS);
+  if (minutosInicio.getUTCMinutes() % paso !== 0 || minutosFin.getUTCMinutes() % paso !== 0) {
+    throw errores.datosInvalidos(`Las reservas se hacen en bloques de ${paso} minutos`);
+  }
   if (minutos < HORARIO.duracionMinima) {
     throw errores.datosInvalidos(`La reserva debe durar al menos ${HORARIO.duracionMinima} minutos`);
   }
@@ -114,6 +127,17 @@ export function crearRepositorioReservaciones(pool: Pool): RepositorioReservacio
            AND r.inicio >= $1::date AND r.inicio < ($1::date + interval '1 day')
          ORDER BY r.inicio`,
         [fecha],
+      );
+      return resultado.rows.map(aReservacion);
+    },
+
+    async listarSemana(desde) {
+      const resultado = await pool.query<FilaReservacion>(
+        `${CONSULTA}
+         WHERE r.estado = 'CONFIRMADA'
+           AND r.inicio >= $1::date AND r.inicio < ($1::date + interval '7 days')
+         ORDER BY r.inicio`,
+        [desde],
       );
       return resultado.rows.map(aReservacion);
     },
@@ -207,6 +231,19 @@ export function registrarRutasReservaciones(app: FastifyInstance, repo: Reposito
     const { fecha } = z.object({ fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(peticion.query);
     const [espacios, reservas] = await Promise.all([repo.listarEspacios(), repo.listarDelDia(fecha)]);
     return { fecha, espacios, reservas };
+  });
+
+  app.get('/api/v1/reservaciones/semana', { preHandler: app.autenticar }, async (peticion) => {
+    const { desde } = z
+      .object({ desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })
+      .parse(peticion.query);
+    const [espacios, reservas] = await Promise.all([
+      repo.listarEspacios(),
+      repo.listarSemana(desde),
+    ]);
+    const fin = new Date(`${desde}T00:00:00.000Z`);
+    fin.setUTCDate(fin.getUTCDate() + 6);
+    return { desde, hasta: fin.toISOString().slice(0, 10), espacios, reservas };
   });
 
   app.get('/api/v1/reservaciones/mias', { preHandler: app.autenticar }, async (peticion) =>
