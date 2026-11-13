@@ -9,8 +9,9 @@ import '../../features/perfil/presentation/perfil_page.dart';
 import '../../features/perfil/presentation/error_sesion_page.dart';
 import '../../features/validador/presentation/validador_page.dart';
 import '../../features/reservaciones/presentation/reservas_page.dart';
+import '../../features/aulas/presentation/aulas_page.dart';
+import '../../features/academico/presentation/notas_page.dart';
 import '../session/session_controller.dart';
-import '../widgets/proximamente_page.dart';
 import 'app_shell.dart';
 
 /// Rutas declarativas con guarda de sesión (§3.2, D-38).
@@ -41,16 +42,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(path: '/inicio', name: 'inicio', builder: (context, estado) => const HomePage()),
           GoRoute(path: '/carnet', name: 'carnet', builder: (context, estado) => const CarnetPage()),
-          GoRoute(
-            path: '/aulas',
-            name: 'aulas',
-            builder: (context, estado) => const ProximamentePage(
-              titulo: 'Aulas virtuales',
-              descripcion: 'Contenidos, tareas, cuestionarios y foros de tus asignaturas.',
-              fase: 'Fase 3',
-              icono: Icons.school_outlined,
-            ),
-          ),
+          GoRoute(path: '/aulas', name: 'aulas', builder: (context, estado) => const AulasPage()),
+          GoRoute(path: '/notas', name: 'notas', builder: (context, estado) => const NotasPage()),
           GoRoute(
             path: '/validador',
             name: 'validador',
