@@ -21,6 +21,8 @@ import {
 } from './modules/reservaciones/reservaciones.js';
 import { crearRepositorioAulas, registrarRutasAulas, type RepositorioAulas } from './modules/aulas/aulas.js';
 import { crearRepositorioEntregas, registrarRutasEntregas, type RepositorioEntregas } from './modules/actividades/entregas.js';
+import { crearRepositorioCuestionarios, registrarRutasCuestionarios, type RepositorioCuestionarios } from './modules/actividades/cuestionarios.js';
+import { crearRepositorioArchivos, registrarRutasArchivos, type RepositorioArchivos } from './modules/archivos/archivos.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -43,6 +45,9 @@ export interface OpcionesApp {
   repositorioAulas?: RepositorioAulas;
   /** Permite inyectar el repositorio de entregas (pruebas). */
   repositorioEntregas?: RepositorioEntregas;
+  /** Permite inyectar cuestionarios y archivos (pruebas). */
+  repositorioCuestionarios?: RepositorioCuestionarios;
+  repositorioArchivos?: RepositorioArchivos;
   logger?: boolean;
 }
 
@@ -153,6 +158,13 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   );
   registrarRutasAulas(app, opciones.repositorioAulas ?? crearRepositorioAulas(pool));
   registrarRutasEntregas(app, opciones.repositorioEntregas ?? crearRepositorioEntregas(pool, env));
+  registrarRutasCuestionarios(
+    app,
+    opciones.repositorioCuestionarios ?? crearRepositorioCuestionarios(pool),
+  );
+  if (clienteS3) {
+    registrarRutasArchivos(app, opciones.repositorioArchivos ?? crearRepositorioArchivos(pool), clienteS3, env);
+  }
 
   // Ruta mínima autenticada para verificar la cadena de token (Fase 0).
   app.get(
