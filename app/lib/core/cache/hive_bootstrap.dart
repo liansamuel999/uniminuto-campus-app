@@ -7,6 +7,7 @@ const List<String> nombresDeCajas = <String>[
   'notas',
   'validador_jti',
   'validador_eventos',
+  'entregas',
   'config',
 ];
 
