@@ -62,6 +62,10 @@ class ApiClient {
     return _ejecutar(() => _dio.put<Map<String, dynamic>>(ruta, data: cuerpo));
   }
 
+  Future<Map<String, dynamic>> deleteJson(String ruta) {
+    return _ejecutar(() => _dio.delete<Map<String, dynamic>>(ruta));
+  }
+
   /// Ejecuta la petición y homogeneiza los errores en [ApiException] (D-17).
   Future<Map<String, dynamic>> _ejecutar(
     Future<Response<Map<String, dynamic>>> Function() peticion,

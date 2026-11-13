@@ -32,6 +32,18 @@ flutter analyze
 flutter test
 ```
 
+## Notas de la Fase 2 (carnet y QR offline)
+
+- La clave del dispositivo se genera en el equipo: **móvil** con ECDSA P-256 y
+  `flutter_secure_storage`; **Web** con un `CryptoKey` no exportable de WebCrypto guardado en
+  IndexedDB. Si el navegador no permite persistirlo, la sesión sigue funcionando y se pide
+  revincular al recargar (D-29).
+- El QR (`<certificado>.<token>`) se firma localmente cada 30 s; el certificado (30 días) lo emite
+  la API y se guarda en Hive junto con los datos del carnet para uso sin red.
+- El **modo validador** (rol Seguridad) aplica las 7 reglas de §6.1 en orden, cachea `jti` 5 minutos,
+  guarda la lista de revocación descargada y encola los eventos para subirlos al reconectar.
+- En Web el validador permite pegar el texto del QR; en móvil usa la cámara (`mobile_scanner`).
+
 ## Notas de la Fase 1
 
 - `lib/firebase_options.dart` es el archivo **real** generado por `flutterfire configure` para el

@@ -141,7 +141,7 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 0C — Credenciales de nube, `.env` y verificación de `/health` + auth | ✅ completada (2026-11-12) |
 | 0B — Claves ES256, esqueleto Flutter, reglas Firestore | ✅ completada (2026-11-12) |
 | 1 — Autenticación, roles y semilla | ✅ completada (2026-11-13) |
-| 2 — Carnet y QR offline | 🚧 en curso: **2A backend ✅** (2026-11-13), 2B app pendiente |
+| 2 — Carnet y QR offline | ✅ completada (2026-11-13) |
 | 3 — Aulas virtuales y calificaciones | pendiente |
 | 4 — Horarios y módulo académico | pendiente |
 | 5 — Panel administrativo y auditoría | pendiente |

@@ -7,6 +7,7 @@ import '../../features/carnet/presentation/carnet_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/perfil/presentation/perfil_page.dart';
 import '../../features/perfil/presentation/error_sesion_page.dart';
+import '../../features/validador/presentation/validador_page.dart';
 import '../session/session_controller.dart';
 import '../widgets/proximamente_page.dart';
 import 'app_shell.dart';
@@ -52,12 +53,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/validador',
             name: 'validador',
-            builder: (context, estado) => const ProximamentePage(
-              titulo: 'Modo validador',
-              descripcion: 'Validación offline del QR del carnet para el personal de seguridad.',
-              fase: 'Fase 2',
-              icono: Icons.qr_code_scanner_outlined,
-            ),
+            builder: (context, estado) => const ValidadorPage(),
           ),
           GoRoute(path: '/perfil', name: 'perfil', builder: (context, estado) => const PerfilPage()),
         ],
