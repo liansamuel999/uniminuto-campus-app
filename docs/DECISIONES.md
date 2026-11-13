@@ -70,6 +70,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | D-23 | `API_BASE_URL` incluye el prefijo completo (`https://host/api/v1`); el cliente añade rutas relativas. | Concatenar `/api/v1` en cada llamada. |
 | D-24 | No se genera OpenAPI/Swagger: el contrato es §7.7 más este registro. | Documentación automática (alcance no pedido). |
 | D-63 | En `ENTORNO=dev`, CORS acepta además cualquier puerto de `localhost`/`127.0.0.1` (Flutter Web elige un puerto aleatorio en cada `flutter run`) sin abrir el origen a dominios externos; en producción solo aplica la lista explícita de `CORS_ORIGINS`. | Fijar un puerto con `--web-port` (frágil y fácil de olvidar) o permitir `*` (prohibido por D-22). |
+| D-64 | Un `Content-Type: application/json` con cuerpo vacío se interpreta como `{}` (no como error 400). Varios clientes HTTP envían esa cabecera en `POST`/`DELETE` sin datos; la API mantiene la validación normal para cuerpos no vacíos e inválidos. | Rechazar el cuerpo vacío (obliga al cliente a recordar quitar la cabecera) o aceptar cualquier cuerpo (peligroso). |
 
 ## D. Seguridad y criptografía
 

@@ -92,6 +92,20 @@ Credenciales de demostración (todas con contraseña `Demo1234*`):
 
 La semilla crea esos usuarios en Firebase Authentication y fija sus *custom claims* `roles`.
 
+## Carnet y acceso (Fase 2)
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `GET /api/v1/carnet/mio` | autenticado | Carnet, dispositivo activo y último certificado |
+| `POST /api/v1/dispositivos` | autenticado | Vincula el teléfono (JWK EC P-256) y emite certificado ES256 de 30 días |
+| `DELETE /api/v1/dispositivos/{id}` | dueño o Soporte | Revoca el dispositivo y lo suma a la lista de revocación |
+| `POST /api/v1/dispositivos/renovar-certificado` | autenticado | Emite un certificado nuevo para el dispositivo activo |
+| `GET /api/v1/acceso/revocaciones` | Seguridad | Lista de revocación con versión (para validadores offline) |
+| `POST /api/v1/auditoria/accesos` | Seguridad | Lote de hasta 100 validaciones (idempotente por id de evento) |
+
+La clave privada institucional nunca sale del backend; la app del validador solo lleva la pública
+(`app/assets/keys/institution_jwks.json`).
+
 ## Pruebas
 
 ```bash
@@ -127,7 +141,7 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 0C — Credenciales de nube, `.env` y verificación de `/health` + auth | ✅ completada (2026-11-12) |
 | 0B — Claves ES256, esqueleto Flutter, reglas Firestore | ✅ completada (2026-11-12) |
 | 1 — Autenticación, roles y semilla | ✅ completada (2026-11-13) |
-| 2 — Carnet y QR offline | siguiente |
+| 2 — Carnet y QR offline | 🚧 en curso: **2A backend ✅** (2026-11-13), 2B app pendiente |
 | 3 — Aulas virtuales y calificaciones | pendiente |
 | 4 — Horarios y módulo académico | pendiente |
 | 5 — Panel administrativo y auditoría | pendiente |

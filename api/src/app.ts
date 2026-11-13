@@ -5,6 +5,15 @@ import { cerrarPool, crearPool, verificarBaseDeDatos } from './db/pool.js';
 import { crearClienteS3, verificarBucket } from './lib/s3.js';
 import { registrarRutasSalud, type ChequeosSalud } from './modules/health/routes.js';
 import { crearRepositorioPerfil, registrarRutasPerfil, type RepositorioPerfil } from './modules/academico/perfil.js';
+import { crearRepositorioCarnet, type RepositorioCarnet } from './modules/carnet/carnet.js';
+import { registrarRutasCarnet } from './modules/carnet/routes.js';
+import {
+  crearRepositorioAcceso,
+  registrarRutasAcceso,
+  type RepositorioAcceso,
+} from './modules/acceso/acceso.js';
+import { FirmanteCarnet } from './lib/pki.js';
+import { leerClaveInstitucional } from './config/institution_keys.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -17,6 +26,10 @@ export interface OpcionesApp {
   chequeos?: ChequeosSalud;
   /** Permite inyectar el repositorio de perfil (pruebas). */
   repositorioPerfil?: RepositorioPerfil;
+  /** Permite inyectar el repositorio de carnet (pruebas). */
+  repositorioCarnet?: RepositorioCarnet;
+  /** Permite inyectar el repositorio de acceso/auditoría (pruebas). */
+  repositorioAcceso?: RepositorioAcceso;
   logger?: boolean;
 }
 
@@ -41,6 +54,25 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   });
 
   registrarManejadorErrores(app);
+
+  // Muchos clientes envían `Content-Type: application/json` sin cuerpo (POST/DELETE sin datos).
+  // Se interpreta un cuerpo vacío como `{}` en lugar de devolver 400 (D-64).
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_peticion, cuerpo, listo) => {
+      const texto = typeof cuerpo === 'string' ? cuerpo.trim() : '';
+      if (texto.length === 0) {
+        listo(null, {});
+        return;
+      }
+      try {
+        listo(null, JSON.parse(texto));
+      } catch {
+        listo(new Error('El cuerpo no es un JSON válido'), undefined);
+      }
+    },
+  );
 
   const origenesPermitidos = origenesCors(env);
   // En desarrollo, Flutter Web elige un puerto aleatorio en cada ejecución: se acepta cualquier
@@ -84,6 +116,24 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   };
   registrarRutasSalud(app, chequeos);
   registrarRutasPerfil(app, opciones.repositorioPerfil ?? crearRepositorioPerfil(pool));
+
+  // Carnet: si no hay clave institucional configurada, las rutas se omiten (Fase 0/1) y se avisa.
+  let repositorioCarnet = opciones.repositorioCarnet;
+  if (!repositorioCarnet) {
+    try {
+      const firmante = await FirmanteCarnet.crear(leerClaveInstitucional(env));
+      repositorioCarnet = crearRepositorioCarnet(pool, firmante);
+    } catch (error) {
+      app.log.warn(
+        { err: error },
+        'Clave institucional no configurada: las rutas de carnet quedan deshabilitadas',
+      );
+    }
+  }
+  if (repositorioCarnet) {
+    registrarRutasCarnet(app, repositorioCarnet);
+  }
+  registrarRutasAcceso(app, opciones.repositorioAcceso ?? crearRepositorioAcceso(pool));
 
   // Ruta mínima autenticada para verificar la cadena de token (Fase 0).
   app.get(

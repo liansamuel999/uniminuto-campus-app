@@ -114,6 +114,15 @@ async function upsertUsuario(
     [usuarioId, usuario.rol],
   );
 
+  // Carnet digital (§4.2): uno por usuario, código Code 128 y vigencia de un año.
+  const codigoBarras = `UNI-${usuario.codigo}`;
+  await cliente.query(
+    `INSERT INTO carnet (usuario_id, codigo_barras, estado, vigente_hasta)
+     VALUES ($1, $2, 'ACTIVO', (now() + interval '1 year')::date)
+     ON CONFLICT (codigo_barras) DO UPDATE SET usuario_id = EXCLUDED.usuario_id`,
+    [usuarioId, codigoBarras],
+  );
+
   return usuarioId;
 }
 
