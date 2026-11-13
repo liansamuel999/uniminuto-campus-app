@@ -8,6 +8,7 @@
   },
   "scripts": {
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:minio": "docker compose -f infra/docker-compose.yml up -d minio",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:reset": "docker compose -f infra/docker-compose.yml down -v && docker compose -f infra/docker-compose.yml up -d",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f --tail=100",

@@ -10,10 +10,16 @@ npm-debug.log*
 .env.*
 !.env.example
 infra/keys/
+# Credenciales de servicios de la nube (cuenta de servicio de Firebase, certificados SSL, etc.)
+api/config/
 *serviceAccount*.json
+*service-account*.json
 *firebase-adminsdk*.json
+firebase-service-account.json
 *.p8
 *.pem
+*.crt
+*.key
 
 # --- Flutter / Dart ---
 .dart_tool/

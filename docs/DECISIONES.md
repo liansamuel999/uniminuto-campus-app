@@ -25,6 +25,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | F. Dominio | D-44 – D-54 | 1–5 |
 | G. Archivos y Firestore | D-55 – D-57 | 3 |
 | H. Infraestructura local | D-58 | 0 |
+| I. Credenciales locales | D-59 | 0 |
 
 ---
 
@@ -127,6 +128,14 @@ el alcance ni los contratos fijados en el documento fuente.
 | ID | Decisión registrada | Alternativa descartada |
 |---|---|---|
 | D-58 | MinIO sigue siendo el datalake de desarrollo (§3.1), pero **la imagen ya no se publica en Docker Hub**: `minio/minio` y `minio/mc` se retiraron el 11/09/2026 y quay.io dejó de permitir descargas anónimas. Se usa la imagen empaquetada por Bitnami (`bitnamilegacy/minio:2025.7.23-debian-12-r5`, mismo servidor MinIO 2025.7.23 y misma API S3) fijada por tag inmutable, y el bucket privado `campus-app` se crea con `MINIO_DEFAULT_BUCKETS`, sin depender de `mc`. La API y la app no cambian: solo hablan S3 con `S3_ENDPOINT`/claves (§6.3), igual que con Cloudflare R2 en la demo. | Sustituir MinIO por otro servidor S3 (SeaweedFS, RustFS, Versity) — cambiaría el software fijado en §3.1; ejecutar el binario de MinIO fuera de Docker — rompería el arranque de §7.3 (`docker compose up`). |
+
+---
+
+## I. Credenciales locales
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-59 | La cuenta de servicio de Firebase se carga por **ruta de archivo**: `FIREBASE_SERVICE_ACCOUNT_PATH` (relativa a `api/`, o absoluta), con `FIREBASE_SERVICE_ACCOUNT` como alternativa para hosts sin sistema de archivos (Render). El archivo vive en `api/config/firebase-service-account.json` y la carpeta completa está en `.gitignore`. En `ENTORNO=dev`, si coexisten credenciales de Firebase y `AUTH_DEV_SECRET`, un `VerificadorCompuesto` acepta ambos tokens (Firebase primero, token de desarrollo como respaldo) para poder hacer pruebas de humo antes de sembrar usuarios; en producción solo se acepta Firebase y `AUTH_DEV_SECRET` está prohibido por validación de entorno. | Pegar el JSON en `FIREBASE_SERVICE_ACCOUNT` también en local (incómodo y propenso a filtrarlo en el historial del shell); permitir el token de desarrollo en producción (inaceptable). |
 
 ---
 

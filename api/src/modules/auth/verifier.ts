@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { errores } from '../../lib/errors.js';
 import type { Env } from '../../config/env.js';
+import { leerCuentaDeServicioFirebase } from '../../config/firebase_credentials.js';
 
 /** Identidad autenticada que viaja adjunta a cada petición. */
 export interface IdentidadToken {
@@ -82,23 +83,60 @@ export async function firmarTokenDev(datos: DatosTokenDev): Promise<string> {
 }
 
 /**
- * Elige el verificador según el entorno: Firebase en producción; en desarrollo, Firebase si hay
- * cuenta de servicio o, si no, tokens HS256 locales.
+ * Acepta un token si cualquiera de los verificadores lo valida (solo en desarrollo, D-59).
+ * Permite seguir usando `npm run token:dev` para pruebas de humo mientras el proyecto Firebase
+ * ya está configurado y todavía no hay usuarios reales creados.
+ */
+export class VerificadorCompuesto implements TokenVerifier {
+  constructor(private readonly verificadores: readonly TokenVerifier[]) {}
+
+  async verificar(token: string): Promise<IdentidadToken> {
+    let ultimoError: unknown;
+    for (const verificador of this.verificadores) {
+      try {
+        return await verificador.verificar(token);
+      } catch (error) {
+        ultimoError = error;
+      }
+    }
+    throw ultimoError instanceof Error ? ultimoError : errores.noAutorizado();
+  }
+}
+
+/**
+ * Elige el verificador según el entorno: Firebase en producción; en desarrollo, Firebase (si hay
+ * cuenta de servicio) y/o tokens HS256 locales.
  *
- * `firebase-admin` se importa de forma diferida para que el arranque en desarrollo (sin Firebase)
+ * `firebase-admin` se importa de forma diferida para que el arranque en desarrollo sin Firebase
  * no cargue el SDK.
  */
 export async function crearVerificador(env: Env): Promise<TokenVerifier> {
-  if (env.FIREBASE_SERVICE_ACCOUNT) {
-    const { FirebaseTokenVerifier } = await import('./firebase_verifier.js');
-    return new FirebaseTokenVerifier(env.FIREBASE_SERVICE_ACCOUNT);
-  }
+  const cuentaDeServicio = leerCuentaDeServicioFirebase(env);
 
   if (env.ENTORNO === 'prod') {
-    throw new Error('En producción se requiere FIREBASE_SERVICE_ACCOUNT para verificar tokens');
+    if (!cuentaDeServicio) {
+      throw new Error(
+        'En producción se requiere FIREBASE_SERVICE_ACCOUNT o FIREBASE_SERVICE_ACCOUNT_PATH',
+      );
+    }
+    const { FirebaseTokenVerifier } = await import('./firebase_verifier.js');
+    return new FirebaseTokenVerifier(cuentaDeServicio);
+  }
+
+  const verificadores: TokenVerifier[] = [];
+  if (cuentaDeServicio) {
+    const { FirebaseTokenVerifier } = await import('./firebase_verifier.js');
+    verificadores.push(new FirebaseTokenVerifier(cuentaDeServicio));
   }
   if (env.AUTH_DEV_SECRET) {
-    return new DevTokenVerifier(env.AUTH_DEV_SECRET);
+    verificadores.push(new DevTokenVerifier(env.AUTH_DEV_SECRET));
   }
-  throw new Error('En dev se requiere AUTH_DEV_SECRET o FIREBASE_SERVICE_ACCOUNT');
+
+  const [primero] = verificadores;
+  if (!primero) {
+    throw new Error(
+      'En dev se requiere AUTH_DEV_SECRET o una cuenta de servicio de Firebase para autenticar',
+    );
+  }
+  return verificadores.length === 1 ? primero : new VerificadorCompuesto(verificadores);
 }

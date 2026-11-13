@@ -17,6 +17,8 @@ export const envSchema = z
     AUTH_DEV_SECRET: z.string().min(16, 'AUTH_DEV_SECRET debe tener al menos 16 caracteres').optional(),
     /** JSON de la cuenta de servicio de Firebase, en una sola línea. */
     FIREBASE_SERVICE_ACCOUNT: z.string().min(2).optional(),
+    /** Ruta al JSON de la cuenta de servicio; relativa a `api/` (D-59). */
+    FIREBASE_SERVICE_ACCOUNT_PATH: z.string().min(2).optional(),
     S3_ENDPOINT: z.string().url().optional(),
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
@@ -33,11 +35,17 @@ export const envSchema = z
         message: 'AUTH_DEV_SECRET no puede estar presente en producción',
       });
     }
-    if (valores.ENTORNO === 'dev' && !valores.AUTH_DEV_SECRET && !valores.FIREBASE_SERVICE_ACCOUNT) {
+    if (
+      valores.ENTORNO === 'dev' &&
+      !valores.AUTH_DEV_SECRET &&
+      !valores.FIREBASE_SERVICE_ACCOUNT &&
+      !valores.FIREBASE_SERVICE_ACCOUNT_PATH
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['AUTH_DEV_SECRET'],
-        message: 'En dev se requiere AUTH_DEV_SECRET o FIREBASE_SERVICE_ACCOUNT para autenticar',
+        message:
+          'En dev se requiere AUTH_DEV_SECRET, FIREBASE_SERVICE_ACCOUNT o FIREBASE_SERVICE_ACCOUNT_PATH para autenticar',
       });
     }
     if ((valores.S3_ACCESS_KEY && !valores.S3_SECRET_KEY) || (!valores.S3_ACCESS_KEY && valores.S3_SECRET_KEY)) {
