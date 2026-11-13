@@ -19,6 +19,12 @@ export const envSchema = z
     FIREBASE_SERVICE_ACCOUNT: z.string().min(2).optional(),
     /** Ruta al JSON de la cuenta de servicio; relativa a `api/` (D-59). */
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().min(2).optional(),
+    /** Claves institucionales ES256 del carnet (D-25, D-60). */
+    INSTITUTION_KID: z.string().optional(),
+    /** JWK privado en una línea (Render, sin sistema de archivos). */
+    INSTITUTION_PRIVATE_KEY: z.string().optional(),
+    /** Ruta al JWK privado; relativa a `api/`. */
+    INSTITUTION_PRIVATE_KEY_PATH: z.string().optional(),
     S3_ENDPOINT: z.string().url().optional(),
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),

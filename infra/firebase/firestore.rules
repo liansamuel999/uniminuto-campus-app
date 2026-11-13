@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reglas de Firestore v1 — Uniminuto Campus App (§4.4, §5 y D-57).
+//
+// Colecciones y quién escribe:
+//   aulas_index/{aulaId}                        solo la API (Admin SDK) — espejo para estas reglas
+//   foros/{aulaId}/hilos/{hiloId}               miembros del aula
+//   foros/{aulaId}/hilos/{hiloId}/mensajes/*    miembros del aula
+//   anuncios/{aulaId}/items/{id}                docentes del aula
+//   notificaciones/{uid}/items/{id}             la API (el dueño solo marca `leida`)
+//   colas_entregas/{uid}/items/{entregaId}      el dueño
+//
+// `aulas_index` guarda `miembros: [uid]` y `docentes: [uid]`; se mantiene desde la API porque el
+// cliente no puede leer la base SQL donde viven inscripciones y docentes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function esMiembro(aulaId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/aulas_index/$(aulaId))
+        && request.auth.uid in get(/databases/$(database)/documents/aulas_index/$(aulaId)).data.miembros;
+    }
+
+    function esDocente(aulaId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/aulas_index/$(aulaId))
+        && request.auth.uid in get(/databases/$(database)/documents/aulas_index/$(aulaId)).data.docentes;
+    }
+
+    // ── Espejo de aulas: lectura para miembros, escritura solo Admin SDK ────
+    match /aulas_index/{aulaId} {
+      allow read: if esMiembro(aulaId) || esDocente(aulaId);
+      allow write: if false;
+    }
+
+    // ── Foros: un foro por actividad (foroId = actividad_id, D-47) ──────────
+    match /foros/{aulaId}/hilos/{hiloId} {
+      allow read: if esMiembro(aulaId);
+      allow create: if esMiembro(aulaId)
+        && request.resource.data.autor_uid == request.auth.uid
+        && request.resource.data.aula_id == aulaId;
+      allow update, delete: if esMiembro(aulaId)
+        && (resource.data.autor_uid == request.auth.uid || esDocente(aulaId));
+
+      match /mensajes/{mensajeId} {
+        allow read: if esMiembro(aulaId);
+        allow create: if esMiembro(aulaId)
+          && request.resource.data.autor_uid == request.auth.uid;
+        allow update, delete: if esMiembro(aulaId)
+          && (resource.data.autor_uid == request.auth.uid || esDocente(aulaId));
+      }
+    }
+
+    // ── Anuncios: leen los miembros, escriben los docentes del aula ─────────
+    match /anuncios/{aulaId}/items/{anuncioId} {
+      allow read: if esMiembro(aulaId);
+      allow create, update: if esDocente(aulaId)
+        && request.resource.data.autor_uid == request.auth.uid;
+      allow delete: if esDocente(aulaId);
+    }
+
+    // ── Notificaciones: cada usuario solo ve su árbol ───────────────────────
+    match /notificaciones/{uid}/items/{notificacionId} {
+      allow read: if autenticado() && request.auth.uid == uid;
+      // La API crea las notificaciones (Admin SDK); el dueño solo puede marcarlas como leídas.
+      allow update: if autenticado() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leida']);
+      allow create, delete: if false;
+    }
+
+    // ── Cola local de entregas: solo el dueño (§6.2) ────────────────────────
+    match /colas_entregas/{uid}/items/{entregaId} {
+      allow read, write: if autenticado() && request.auth.uid == uid;
+    }
+
+    // Todo lo demás queda cerrado por defecto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

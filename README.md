@@ -73,7 +73,28 @@ curl -H "Authorization: Bearer <token>" http://localhost:3000/api/v1/sesion
 ## Pruebas
 
 ```bash
-npm run api:test     # vitest: health, auth y reintento de transacciones
+npm run api:test     # vitest: health, auth, credenciales y reintento de transacciones
+npm run app:test     # flutter test: PhoneFrame y caché Hive
+flutter analyze app  # sin errores
+```
+
+## App Flutter
+
+```bash
+cd app
+flutter pub get
+flutter run -d chrome --dart-define-from-file=env/dev.json   # Web con marco de teléfono
+flutter run --dart-define-from-file=env/dev.json             # Android/emulador
+```
+
+`lib/core/config/firebase_options.dart` es un **archivo de ejemplo** hasta que la Fase 1 ejecute
+`flutterfire configure`; mientras tanto el login permite "Entrar en modo muestra" para recorrer el
+esqueleto. Las claves institucionales se generan con `node infra/scripts/generate-keys.mjs`.
+
+## Reglas de Firestore
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase/firebase.json
 ```
 
 ## Estado por fases
@@ -82,8 +103,8 @@ npm run api:test     # vitest: health, auth y reintento de transacciones
 |---|---|
 | 0A — Cimientos (repo, infra, migraciones base, esqueleto API) | ✅ completada (2026-11-12) |
 | 0C — Credenciales de nube, `.env` y verificación de `/health` + auth | ✅ completada (2026-11-12) |
-| 0B — Claves ES256, esqueleto Flutter, reglas Firestore | pendiente |
-| 1 — Autenticación, roles y semilla | pendiente |
+| 0B — Claves ES256, esqueleto Flutter, reglas Firestore | ✅ completada (2026-11-12) |
+| 1 — Autenticación, roles y semilla | siguiente |
 | 2 — Carnet y QR offline | pendiente |
 | 3 — Aulas virtuales y calificaciones | pendiente |
 | 4 — Horarios y módulo académico | pendiente |

@@ -1,0 +1,4 @@
+{
+  "API_BASE_URL": "https://api.campus-demo.example/api/v1",
+  "ENTORNO": "prod"
+}

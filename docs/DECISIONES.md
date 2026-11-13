@@ -26,6 +26,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | G. Archivos y Firestore | D-55 – D-57 | 3 |
 | H. Infraestructura local | D-58 | 0 |
 | I. Credenciales locales | D-59 | 0 |
+| J. Claves institucionales | D-60 | 0B |
 
 ---
 
@@ -136,6 +137,14 @@ el alcance ni los contratos fijados en el documento fuente.
 | ID | Decisión registrada | Alternativa descartada |
 |---|---|---|
 | D-59 | La cuenta de servicio de Firebase se carga por **ruta de archivo**: `FIREBASE_SERVICE_ACCOUNT_PATH` (relativa a `api/`, o absoluta), con `FIREBASE_SERVICE_ACCOUNT` como alternativa para hosts sin sistema de archivos (Render). El archivo vive en `api/config/firebase-service-account.json` y la carpeta completa está en `.gitignore`. En `ENTORNO=dev`, si coexisten credenciales de Firebase y `AUTH_DEV_SECRET`, un `VerificadorCompuesto` acepta ambos tokens (Firebase primero, token de desarrollo como respaldo) para poder hacer pruebas de humo antes de sembrar usuarios; en producción solo se acepta Firebase y `AUTH_DEV_SECRET` está prohibido por validación de entorno. | Pegar el JSON en `FIREBASE_SERVICE_ACCOUNT` también en local (incómodo y propenso a filtrarlo en el historial del shell); permitir el token de desarrollo en producción (inaceptable). |
+
+---
+
+## J. Claves institucionales
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-60 | El par ES256 institucional se genera con `infra/scripts/generate-keys.mjs` (WebCrypto nativo, sin dependencias). La privada queda en `infra/keys/institution_private.jwk.json` (ignorada por git) y se carga con `INSTITUTION_PRIVATE_KEY_PATH` (relativa a `api/`) o con `INSTITUTION_PRIVATE_KEY` (JWK en una línea, para Render). La pública se publica como **JWKS** versionado en `app/assets/keys/institution_jwks.json` (array de claves con `kid`, `alg: ES256`, `use: sig`), para que el validador pueda rotar claves sin recompilar a ciegas. El `kid` sigue el formato `inst-<año-mes>-<6 hex>` para no engordar el QR. | Clave única sin `kid`; guardar la privada en el repositorio; embeber la privada en la app (prohibido por §6.1). |
 
 ---
 
