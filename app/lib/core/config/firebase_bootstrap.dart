@@ -3,6 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'firebase_options.dart';
 
+/// Marcador de configuración de Firebase.
+///
+/// La Fase 1 ejecuta `flutterfire configure` (genera `firebase_options.dart` con los
+/// identificadores públicos) y luego cambia este valor a `true`.
+const bool kFirebaseConfigurado = false;
+
 /// Indica si Firebase se inicializó correctamente en esta ejecución.
 final firebaseDisponibleProvider = Provider<bool>((ref) => false);
 

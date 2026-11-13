@@ -1,14 +1,12 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 
-/// Marcador temporal de la Fase 0B.
+/// ARCHIVO DE EJEMPLO (Fase 0B).
 ///
-/// `false` indica que este archivo **todavía es el de ejemplo** y que Firebase aún no se ha
-/// configurado. La Fase 1 lo reemplaza ejecutando `flutterfire configure`, que genera el archivo
-/// real con los identificadores públicos del proyecto (no contiene secretos) y lo deja con
-/// `true`.
-const bool kFirebaseConfigurado = false;
-
+/// La Fase 1 lo reemplaza por el que genera `flutterfire configure`; este archivo se puede
+/// sobrescribir sin tocar el resto del código. El marcador de "Firebase configurado" vive en
+/// `firebase_bootstrap.dart`, no aquí.
+///
 /// Opciones de ejemplo. **No son credenciales reales.**
 class DefaultFirebaseOptions {
   const DefaultFirebaseOptions._();
