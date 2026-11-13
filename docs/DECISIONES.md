@@ -1,0 +1,138 @@
+# DECISIONES — Uniminuto Campus App
+
+Registro de las decisiones **no cubiertas explícitamente** por [`arquitectura.md`](arquitectura.md).
+Según la regla de lectura del documento (línea 4), toda ambigüedad se resuelve con la opción más
+simple coherente con el stack y se registra aquí. Ninguna decisión de este archivo cambia el stack,
+el alcance ni los contratos fijados en el documento fuente.
+
+## Cómo se usa este registro
+
+- Cada decisión tiene un **ID estable** (`D-01`…). Los commits y revisiones de código citan el ID.
+- **Estado**: `vigente` (aplicada), `revisada` (ajustada después de aprobada) o `sustituida`.
+- Si una decisión se cambia, **no se borra**: se marca `sustituida` y se añade la nueva con su ID.
+- Las decisiones se registraron al aprobar el plan de ejecución por fases (2026-11-12). Ninguna
+  quedó congelada ni modificada por el cliente.
+
+## Resumen por área
+
+| Área | IDs | Fase de aplicación |
+|---|---|---|
+| A. Repositorio y proceso | D-01 – D-08 | 0 |
+| B. Base de datos y migraciones | D-09 – D-15 | 0–4 |
+| C. API | D-16 – D-24 | 0–3 |
+| D. Seguridad y criptografía | D-25 – D-34 | 0, 2 |
+| E. App Flutter | D-35 – D-43 | 0B–3 |
+| F. Dominio | D-44 – D-54 | 1–5 |
+| G. Archivos y Firestore | D-55 – D-57 | 3 |
+| H. Infraestructura local | D-58 | 0 |
+
+---
+
+## A. Repositorio y proceso
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-01 | La raíz del repositorio es la carpeta del proyecto; `app/`, `api/`, `infra/` y `docs/` cuelgan directamente de ella (estructura §7.1). | Anidar todo en un subdirectorio `campus_app/`. |
+| D-02 | **npm** como único gestor de paquetes Node; sin *workspaces* (no hay paquetes JS compartidos entre `app/` y `api/`). El `package.json` raíz solo orquesta scripts. | pnpm (no está instalado y no aporta aquí). |
+| D-03 | `engines.node >= 20`; desarrollo y CI con **Node 22 LTS** (`.nvmrc` = 22), alineado con el despliegue en Render. | Usar la versión 26 del equipo (rompe la reproducibilidad frente a Render). |
+| D-04 | Prettier + ESLint en `api/`; `flutter_lints` + `dart format` en `app/`. Ancho de línea 100 en ambos. | Biome (menos estándar para revisores académicos). |
+| D-05 | Pruebas: **Vitest** + `app.inject()` en la API; `flutter_test` + `mocktail` en la app. Cobertura ≥ 80 % solo en JWT, cálculo de notas, RBAC y reintento de transacciones. | Jest/supertest; pruebas end-to-end en todas las fases. |
+| D-06 | CI mínimo en GitHub Actions (`flutter analyze` + `npm test`) se añade en la Fase 6, cuando el repo se publique. | CI desde el inicio (no hay repositorio remoto todavía). |
+| D-07 | **Sin registro público de usuarios**: solo el script de semilla crea cuentas; no existe endpoint de *signup* (no está en §7.7). | Autoregistro con verificación de correo (añade alcance no pedido). |
+| D-08 | Nombres de código (clases, variables, archivos) en inglés; tablas, entidades de dominio y textos de interfaz en español, como ya fija el documento. | Traducir también el modelo de datos al inglés. |
+
+## B. Base de datos y migraciones
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-09 | Migraciones con **node-pg-migrate** y archivos `.sql` en `infra/migrations`, ejecutados por `api` con `migrations-dir` apuntando a `../infra/migrations` y tabla `pgmigrations`. Los archivos usan el prefijo numérico que exige la herramienta (**13 dígitos, epoch en milisegundos**); su nombre visible es `<timestamp>_<nombre>.sql`. | Prefijo humano `0001_…` (node-pg-migrate solo reconoce prefijos de 13 o 17 dígitos); runner propio. |
+| D-10 | PK `UUID DEFAULT gen_random_uuid()`; `entrega.id` se genera en el cliente como UUIDv4 y **es** la clave de idempotencia de `POST /entregas`. | Seriales autoincrementales (peores para datos distribuidos y para idempotencia de cliente). |
+| D-11 | Enumeraciones como `TEXT` + `CHECK` constrains, no tipos `ENUM` nativos (permite añadir valores sin migración destructiva). | `CREATE TYPE … AS ENUM`. |
+| D-12 | Todas las fechas como `timestamptz`; `horario.dia_semana` es `SMALLINT` ISO-8601 (1 = lunes) y las horas son `time`; la presentación usa `America/Bogota`. | Guardar "lunes" como texto (rompe ordenamientos y filtros). |
+| D-13 | Esquema único `public`, tablas en singular y español. Claves foráneas `ON DELETE RESTRICT`; baja lógica mediante `estado` donde el documento ya lo define (`usuario`, `carnet`, `dispositivo`, `incidencia`). | Borrado físico en cascada. |
+| D-14 | `withTx()` es el **único** punto de transacción: reintenta hasta 3 veces solo ante SQLSTATE `40001`, con espera exponencial 50/100/200 ms y liberación de la conexión entre intentos. | Reintentos dispersos por módulo. |
+| D-15 | Los índices se crean en la migración de su tabla (FKs y consultas del contrato §7.7). Sin particionado ni réplicas en la muestra. | Índices "después, si hace falta". |
+
+## C. API
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-16 | Monolito modular: un plugin de Fastify por módulo; `src/app.ts` construye la app (testeable), `src/server.ts` escucha. La configuración de entorno se valida con Zod al arrancar y falla rápido. | Serverless/Cloud Functions (exige plan de pago, ver §3.2). |
+| D-17 | Errores con forma estricta `{codigo, mensaje}`; `codigo` en `SCREAMING_SNAKE` español (`NO_AUTORIZADO`, `PROHIBIDO`, `DATOS_INVALIDOS`, `NO_ENCONTRADO`, `CONFLICTO`, `ERROR_INTERNO`, `SERVICIO_NO_DISPONIBLE`) y mapeo HTTP 400/401/403/404/409/422/500/503. | Envolver todas las respuestas en `{ok, data}` (el documento no lo pide). |
+| D-18 | Paginación por cursor opaco (base64url de `{orden, id}`), `limite` por defecto 20 y máximo 100; respuesta `{items, siguiente_cursor}`. | Offset/limit (inestable con inserciones concurrentes). |
+| D-19 | `GET /health` verifica base de datos y almacenamiento con timeout de 2 s; responde 200 si ambos están `ok` (o el almacenamiento `no_configurado`) y 503 si alguno falla. Sin autenticación. | `/health` que solo devuelve "ok" sin comprobar dependencias. |
+| D-20 | Verificación de token **inyectable**: `TokenVerifier` con implementación Firebase (`verifyIdToken`) en producción y `DevTokenVerifier` (HS256 con `AUTH_DEV_SECRET`) **solo** cuando `ENTORNO=dev`. Permite cerrar la Fase 0 sin proyecto Firebase. | Bloquear la Fase 0 hasta crear Firebase; o dejar un bypass sin restricción de entorno. |
+| D-21 | Los *custom claims* llevan `roles: string[]`. La API autoriza si el rol exigido está en los claims; **no existe "rol activo" en el servidor**. El selector de rol es solo de interfaz y no cambia permisos. | Enviar `X-Rol-Activo` y confiar en él (falsificable y redundante). |
+| D-22 | CORS con lista explícita de `CORS_ORIGINS`, sin comodines; métodos y cabeceras declarados. Sin rate-limit ni helmet en la muestra (Render/Hosting ya dan TLS). | `origin: true` o `*`. |
+| D-23 | `API_BASE_URL` incluye el prefijo completo (`https://host/api/v1`); el cliente añade rutas relativas. | Concatenar `/api/v1` en cada llamada. |
+| D-24 | No se genera OpenAPI/Swagger: el contrato es §7.7 más este registro. | Documentación automática (alcance no pedido). |
+
+## D. Seguridad y criptografía
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-25 | `infra/scripts/generate-keys.mjs` (jose) genera un par **ES256** y un `kid`; la privada va a `.env` (gitignored) y la pública a `app/assets/keys/institution_jwks.json`, **versionada**, como lista `kid → JWK` para permitir rotación. | Clave única sin `kid` (impide rotar sin recompilar). |
+| D-26 | El QR codifica la concatenación `<certificado>.<tokenQR>`. Como base64url no contiene `.`, la cadena resultante tiene 6 segmentos y se parte en 3 + 3. | Separador alternativo (`~`, `|`) y parseo por búsqueda de prefijo. |
+| D-27 | Nivel de corrección de errores del QR: **L** cuando el payload supere ~1,2 KB; se mide en Fase 2 y nunca se recortan claims más allá de lo que fija §6.1. | Nivel H/M fijo (reduce la capacidad útil del QR). |
+| D-28 | `jti` = contador creciente + 6–8 caracteres aleatorios; la caché anti-repetición del validador guarda 5 minutos y se purga por antigüedad. | UUID completo (alarga el QR sin aportar seguridad). |
+| D-29 | En Web la clave del dispositivo es un `CryptoKey` P-256 **no exportable** de WebCrypto, persistido en IndexedDB. Si el navegador no puede persistirlo, la app pide revincular en ese equipo y lo explica en la ayuda. | Exportar la clave a `localStorage` (anula el requisito "no exportable"). |
+| D-30 | En móvil la clave privada del dispositivo se guarda con `flutter_secure_storage` (Keystore). Se documenta la limitación real: **no es hardware-backed**, pues `dart_jsonwebtoken` necesita la clave en el proceso Dart. | Implementar firma nativa con clave no exportable del Keystore (fuera de alcance de la muestra). |
+| D-31 | Certificado de carnet con `exp` de 30 días; la app pide renovación en segundo plano si faltan < 7 días y hay red. Sin red y con certificado vencido, el QR muestra "Conéctate para renovar el carnet". | Renovación solo manual. |
+| D-32 | `GET /acceso/revocaciones` devuelve `{version, actualizado_en, carnets[]}`; el validador la refresca al recuperar red y la muestra con fecha de última sincronización. | Lista embebida en el build (nunca se actualizaría). |
+| D-33 | Los eventos del validador se envían en lotes de máximo 100; el `id` del evento se genera en el dispositivo y se inserta con `ON CONFLICT DO NOTHING` para deduplicar. No se añaden campos a `evento_auditoria`. | Reintentar sin idempotencia (duplicaría auditoría). |
+| D-34 | El cambio de contraseña exige reautenticación previa (flujo real de Firebase) y valida un mínimo de 8 caracteres en el cliente antes de llamar. | Cambio directo sin reautenticar. |
+
+## E. App Flutter
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-35 | Riverpod con providers manuales y modelos con `fromJson`/`toJson` escritos a mano; sin `freezed` ni `build_runner` en la muestra. | Codegen con freezed/json_serializable (más toolchain para pocos modelos). |
+| D-36 | Textos de interfaz en español dentro de constantes por *feature*; `intl` solo para formato de fechas y números. Sin ARB ni múltiples locales. | Internacionalización completa (una sola locale en alcance). |
+| D-37 | Material 3, tema claro con azul institucional neutro (`#1B3A6B`), sin logotipos oficiales ni assets con licencia. | Tema oscuro y branding oficial. |
+| D-38 | `go_router` con `ShellRoute` y navegación inferior por rol; las guardas redirigen a `/login` o a la home del rol. El selector de rol solo aparece si el usuario tiene más de uno. | Rutas imperativas con `Navigator`. |
+| D-39 | `PhoneFrame` en el widget raíz: en Web y pantallas > 600 px limita a 430 px de ancho con alto de viewport, borde sutil y fondo neutro; en pantallas angostas ocupa todo el ancho. | Marco por pantalla (duplicaría lógica). |
+| D-40 | Hive (`hive_ce`) con una caja por dominio (`carnet`, `horario`, `notas`, `validador_jti`, `validador_eventos`, `config`), cada una con versión de esquema y TTL explícito. | Una única caja con claves prefijadas (difícil de versionar y limpiar). |
+| D-41 | En Web se habilita la persistencia de Firestore; si el SDK devuelve `failed-precondition` por otra pestaña abierta, la app continúa en memoria y muestra un aviso. | Deshabilitar persistencia en Web (perdería escritura offline). |
+| D-42 | Las notificaciones son una bandeja interna con badge; **no** se usa push ni Firebase Cloud Messaging. | Notificaciones push (fuera de alcance y sin backend de pago). |
+| D-43 | El aviso "Proyecto de muestra – datos ficticios" es un widget único, visible en login y perfil. | Aviso repetido por pantalla. |
+
+## F. Dominio
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-44 | Notas redondeadas a 2 decimales (mitad hacia arriba) solo en el último paso; las actividades sin calificar no entran al denominador; si la suma de pesos calificados es 0 la nota de corte es nula; un corte sin nota cuenta como 0 en la definitiva. | Redondear en cada paso (arrastra error en la definitiva). |
+| D-45 | `peso_porcentual` es `DECIMAL(5,2)` por actividad y por corte; `nota_máxima` por defecto 5.00 y nunca menor que la nota registrada. La API rechaza publicar una actividad que haga exceder 100 % en su corte. | Validar solo en la interfaz. |
+| D-46 | **Cuestionarios: un único intento** por estudiante (el primero registrado); la autocalificación y el recálculo de `nota_corte` ocurren en la misma transacción. | Múltiples intentos con mejor nota (el documento no lo define; añadiría alcance). |
+| D-47 | `foroId` de Firestore = `actividad_id`; los adjuntos usan el prefijo `foros/{foroId}/…`. | Colección de foros paralela con su propio id (duplicaría identidad). |
+| D-48 | Los anuncios de aula viven en Firestore (`anuncios/{aulaId}/items`); `contenido` tipo `ANUNCIO` cubre solo anuncios dentro de una unidad. `POST /anuncios/{id}/replicar-correo` lo invoca el docente dueño del aula y es idempotente por anuncio y estudiante. | Anuncios solo en CockroachDB (perderían la sincronización en tiempo real). |
+| D-49 | Se añade `GET /evaluaciones-docentes/resumen` (agregados, solo Admin Académico): §5 exige "R (agregados)" y §7.7 no lista el endpoint. No expone comentarios identificables. | No implementar los agregados (dejaría §5 sin cubrir). |
+| D-50 | Incidencias: `POST /incidencias` y `GET /incidencias` (propias) para cualquier rol autenticado; `GET /incidencias?estado=` y `PUT /incidencias/{id}` solo Soporte. | Gestión por Administrador (la matriz §5 asigna Soporte). |
+| D-51 | `GET /mis-notas` filtra por periodo activo y por las inscripciones del usuario; ordena por asignatura → corte → actividad. | Devolver todo el histórico y filtrar en el cliente. |
+| D-52 | El horario no detecta choques de franjas; el detalle enlaza al salón del campus. | Validación de solapamientos (no pedida). |
+| D-53 | Foto del carnet en `perfiles/{usuarioId}.jpg`, servida por URL prefirmada de lectura y cacheada en disco para uso offline. | URL pública del bucket (prohibido por §6.3). |
+| D-54 | Semilla idempotente por clave natural (correo, código de asignatura/periodo/grupo, código de salón), contraseña demo `Demo1234*` y usuarios espejo en Firebase Auth con *custom claims*. Sin `FIREBASE_SERVICE_ACCOUNT`, el script corre solo contra la base de datos y lo advierte. | Semilla destructiva que recrea datos en cada ejecución. |
+
+## G. Archivos y Firestore
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-55 | Validación de archivos por extensión + MIME declarado, límite de 50 MB aplicado en la URL prefirmada con `content-length-range`, y `HeadObject` antes de registrar el recurso en la base. | Confiar solo en lo que declara el cliente. |
+| D-56 | URLs prefirmadas: subida 10 minutos, lectura 15 minutos. Respuestas `{objeto_key, url_put}` y `{url, expira_en}`. | URLs públicas o proxear el archivo por la API. |
+| D-57 | Reglas e índices de Firestore viven en `infra/firebase/` y se despliegan a mano con `firebase deploy --only firestore:rules,firestore:indexes`. | Desplegar desde CI (no hay CI hasta la Fase 6). |
+
+---
+
+## H. Infraestructura local
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-58 | MinIO sigue siendo el datalake de desarrollo (§3.1), pero **la imagen ya no se publica en Docker Hub**: `minio/minio` y `minio/mc` se retiraron el 11/09/2026 y quay.io dejó de permitir descargas anónimas. Se usa la imagen empaquetada por Bitnami (`bitnamilegacy/minio:2025.7.23-debian-12-r5`, mismo servidor MinIO 2025.7.23 y misma API S3) fijada por tag inmutable, y el bucket privado `campus-app` se crea con `MINIO_DEFAULT_BUCKETS`, sin depender de `mc`. La API y la app no cambian: solo hablan S3 con `S3_ENDPOINT`/claves (§6.3), igual que con Cloudflare R2 en la demo. | Sustituir MinIO por otro servidor S3 (SeaweedFS, RustFS, Versity) — cambiaría el software fijado en §3.1; ejecutar el binario de MinIO fuera de Docker — rompería el arranque de §7.3 (`docker compose up`). |
+
+---
+
+## Decisiones que NO se registran (ya cerradas en el documento)
+
+Stack (§3), entidades y relaciones (§4.2), estructura del campus (§4.3), reglas de seguridad de
+Firestore (§4.4), matriz RBAC (§5), flujos de QR, sincronización, archivos y notas (§6), estructura
+del monorepo (§7.1), variables de entorno (§7.2), despliegue (§7.4–7.5), contrato de API (§7.7),
+seguridad (§8) y orden de fases (§9).

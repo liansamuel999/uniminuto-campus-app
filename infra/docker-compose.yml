@@ -1,0 +1,66 @@
+name: uniminuto-campus-app
+
+# Infraestructura local de la muestra (§7.3):
+#   - CockroachDB en modo nodo único e inseguro (solo desarrollo).
+#   - MinIO como datalake compatible con S3 (bucket privado `campus-app`).
+# No se usa en la demo pública: allí se emplean CockroachDB Cloud y Cloudflare R2.
+#
+# Nota (D-58): MinIO retiró `minio/minio` y `minio/mc` de Docker Hub el 11/09/2026.
+# Se usa la imagen de Bitnami —mismo servidor MinIO y la misma API S3— fijada por digest,
+# y el bucket se crea con `MINIO_DEFAULT_BUCKETS`, sin depender de `mc`.
+
+services:
+  cockroach:
+    image: cockroachdb/cockroach@sha256:736a42385c600673d034e0be6c4475d55975eaa6a7b5a57114b0dadbe2fac511
+    command: start-single-node --insecure --advertise-addr=cockroach:26257
+    ports:
+      - '26257:26257' # SQL (pg driver)
+      - '8080:8080' # Consola de administración
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    healthcheck:
+      test:
+        - CMD
+        - /cockroach/cockroach
+        - sql
+        - --insecure
+        - --host=localhost:26257
+        - --execute=SELECT 1
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  # Crea la base `campus` descrita en §7.4. Es un servicio de un solo uso.
+  cockroach-init:
+    image: cockroachdb/cockroach@sha256:736a42385c600673d034e0be6c4475d55975eaa6a7b5a57114b0dadbe2fac511
+    depends_on:
+      cockroach:
+        condition: service_healthy
+    entrypoint:
+      - /cockroach/cockroach
+      - sql
+      - --insecure
+      - --host=cockroach:26257
+      - --execute=CREATE DATABASE IF NOT EXISTS campus
+    restart: 'no'
+
+  minio:
+    # MinIO 2025.7.23 empaquetado por Bitnami (tag inmutable; la imagen `minio/minio` ya no existe).
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # Crea el bucket privado al primer arranque (reemplaza a `minio-init`/`mc`).
+      MINIO_DEFAULT_BUCKETS: campus-app
+    ports:
+      - '9000:9000' # API S3
+      - '9001:9001' # Consola web
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+volumes:
+  cockroach-data:
+  minio-data:

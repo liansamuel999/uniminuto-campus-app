@@ -1,0 +1,40 @@
+# --- Node / API ---
+node_modules/
+dist/
+coverage/
+npm-debug.log*
+*.log
+
+# --- Entorno y secretos (nunca al repositorio) ---
+.env
+.env.*
+!.env.example
+infra/keys/
+*serviceAccount*.json
+*firebase-adminsdk*.json
+*.p8
+*.pem
+
+# --- Flutter / Dart ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+app/web/flutter_service_worker.js
+app/android/local.properties
+app/android/.gradle/
+app/android/key.properties
+app/ios/
+app/macos/
+app/windows/
+app/linux/
+
+# --- IDE / sistema ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# --- Datos locales de Docker ---
+infra/.data/

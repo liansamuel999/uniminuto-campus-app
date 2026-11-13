@@ -1,0 +1,25 @@
+{
+  "name": "uniminuto-campus-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo de la muestra Uniminuto Campus App (Flutter + Fastify + CockroachDB + Firestore)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:reset": "docker compose -f infra/docker-compose.yml down -v && docker compose -f infra/docker-compose.yml up -d",
+    "infra:logs": "docker compose -f infra/docker-compose.yml logs -f --tail=100",
+    "db:migrate": "npm --prefix api run db:migrate",
+    "api:dev": "npm --prefix api run dev",
+    "api:build": "npm --prefix api run build",
+    "api:test": "npm --prefix api run test",
+    "token:dev": "npm --prefix api run token:dev",
+    "app:get": "cd app && flutter pub get",
+    "app:run": "cd app && flutter run",
+    "app:analyze": "cd app && flutter analyze",
+    "app:test": "cd app && flutter test",
+    "test": "npm run api:test"
+  }
+}
