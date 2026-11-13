@@ -15,7 +15,7 @@ class _Acceso {
   final String fase;
 }
 
-/// Pantalla de inicio: resume el estado del esqueleto y da acceso a los módulos.
+/// Pantalla de inicio con los accesos a los módulos del rol activo.
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -28,8 +28,9 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sesion = ref.watch(sessionProvider);
+    final sesion = ref.watch(sesionProvider).valueOrNull;
     final colores = Theme.of(context).colorScheme;
+    final rol = sesion == null ? null : rolEfectivo(ref, sesion);
 
     return Scaffold(
       appBar: AppBar(
@@ -39,7 +40,7 @@ class HomePage extends ConsumerWidget {
             padding: const EdgeInsets.only(right: 12),
             child: Chip(
               avatar: Icon(Icons.verified_user_outlined, size: 18, color: colores.primary),
-              label: Text(sesion.rolActivo ?? 'Sin rol'),
+              label: Text(rol ?? 'Sin rol'),
               visualDensity: VisualDensity.compact,
             ),
           ),
@@ -49,12 +50,12 @@ class HomePage extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           Text(
-            'Hola, ${sesion.uid ?? 'invitado'}',
+            'Hola, ${sesion?.perfil.nombres ?? 'invitado'}',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
-            'Estás recorriendo el esqueleto de la Fase 0. Los módulos se activan en las fases siguientes.',
+            '${sesion?.perfil.programa?.nombre ?? 'Sin programa'} · ${sesion?.perfil.codigoInstitucional ?? 'Sin código'}',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colores.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
@@ -113,10 +114,7 @@ class _TarjetaAcceso extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant),
               ),
               const SizedBox(height: 6),
-              Text(
-                acceso.fase,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colores.primary),
-              ),
+              Text(acceso.fase, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colores.primary)),
             ],
           ),
         ),

@@ -13,7 +13,7 @@ class _Destino {
   final IconData iconoActivo;
 }
 
-/// Barra de navegación inferior dependiente del rol activo (§5, D-38).
+/// Barra de navegación inferior dependiente del rol (§5, D-38).
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child});
 
@@ -24,14 +24,16 @@ class AppShell extends ConsumerWidget {
     const carnet = _Destino('/carnet', 'Carnet', Icons.badge_outlined, Icons.badge);
     const aulas = _Destino('/aulas', 'Aulas', Icons.school_outlined, Icons.school);
     const perfil = _Destino('/perfil', 'Perfil', Icons.person_outline, Icons.person);
+    const validador = _Destino(
+      '/validador',
+      'Validador',
+      Icons.qr_code_scanner_outlined,
+      Icons.qr_code_scanner,
+    );
 
     switch (rol) {
       case 'SEGURIDAD':
-        return const [
-          inicio,
-          _Destino('/validador', 'Validador', Icons.qr_code_scanner_outlined, Icons.qr_code_scanner),
-          perfil,
-        ];
+        return const [inicio, validador, perfil];
       case 'DOCENTE':
       case 'ADMIN_ACADEMICO':
       case 'ADMIN_ESPACIOS':
@@ -45,8 +47,9 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sesion = ref.watch(sessionProvider);
-    final destinos = _destinosPara(sesion.rolActivo);
+    final sesion = ref.watch(sesionProvider).valueOrNull;
+    final rol = sesion == null ? null : rolEfectivo(ref, sesion);
+    final destinos = _destinosPara(rol);
     final ubicacion = GoRouterState.of(context).matchedLocation;
 
     var indice = destinos.indexWhere((destino) => ubicacion.startsWith(destino.ruta));

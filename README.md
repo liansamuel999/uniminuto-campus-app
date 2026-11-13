@@ -70,6 +70,28 @@ npm run token:dev -- uid-doc-1 DOCENTE
 curl -H "Authorization: Bearer <token>" http://localhost:3000/api/v1/sesion
 ```
 
+## Base de datos y semilla
+
+```bash
+npm run db:migrate   # aplica las migraciones SQL numeradas (idempotente)
+npm run db:seed      # usuarios + claims, programa, periodo 2026-2, asignaturas, grupos,
+                     # inscripciones, campus Calle 80 y horarios (idempotente)
+```
+
+Credenciales de demostración (todas con contraseña `Demo1234*`):
+
+| Rol | Correo |
+|---|---|
+| Estudiante | `juan.rojas@demo.uniminuto.test` (también `maria.cardenas@`, `andres.molina@`) |
+| Docente | `carolina.pena@demo.uniminuto.test` (también `diego.suarez@`) |
+| Admin académico | `luisa.castro@demo.uniminuto.test` |
+| Admin espacios | `camilo.vega@demo.uniminuto.test` |
+| Seguridad | `jorge.salazar@demo.uniminuto.test` |
+| Soporte | `natalia.gomez@demo.uniminuto.test` |
+| Auditor | `oscar.rincon@demo.uniminuto.test` |
+
+La semilla crea esos usuarios en Firebase Authentication y fija sus *custom claims* `roles`.
+
 ## Pruebas
 
 ```bash
@@ -104,8 +126,8 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 0A — Cimientos (repo, infra, migraciones base, esqueleto API) | ✅ completada (2026-11-12) |
 | 0C — Credenciales de nube, `.env` y verificación de `/health` + auth | ✅ completada (2026-11-12) |
 | 0B — Claves ES256, esqueleto Flutter, reglas Firestore | ✅ completada (2026-11-12) |
-| 1 — Autenticación, roles y semilla | siguiente |
-| 2 — Carnet y QR offline | pendiente |
+| 1 — Autenticación, roles y semilla | ✅ completada (2026-11-13) |
+| 2 — Carnet y QR offline | siguiente |
 | 3 — Aulas virtuales y calificaciones | pendiente |
 | 4 — Horarios y módulo académico | pendiente |
 | 5 — Panel administrativo y auditoría | pendiente |

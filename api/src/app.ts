@@ -1,9 +1,10 @@
-import cors from '@fastify/cors';
+import cors, { type OriginFunction } from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { origenesCors, type Env } from './config/env.js';
 import { cerrarPool, crearPool, verificarBaseDeDatos } from './db/pool.js';
 import { crearClienteS3, verificarBucket } from './lib/s3.js';
 import { registrarRutasSalud, type ChequeosSalud } from './modules/health/routes.js';
+import { crearRepositorioPerfil, registrarRutasPerfil, type RepositorioPerfil } from './modules/academico/perfil.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -14,6 +15,8 @@ export interface OpcionesApp {
   verificador?: TokenVerifier;
   /** Permite inyectar comprobaciones de salud (pruebas). */
   chequeos?: ChequeosSalud;
+  /** Permite inyectar el repositorio de perfil (pruebas). */
+  repositorioPerfil?: RepositorioPerfil;
   logger?: boolean;
 }
 
@@ -39,8 +42,28 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
 
   registrarManejadorErrores(app);
 
+  const origenesPermitidos = origenesCors(env);
+  // En desarrollo, Flutter Web elige un puerto aleatorio en cada ejecución: se acepta cualquier
+  // puerto de localhost/127.0.0.1, además de la lista configurada (D-63).
+  const origenCors: string[] | OriginFunction = env.ENTORNO === 'dev'
+    ? (origen, callback) => {
+        if (!origen) return callback(null, true);
+        if (origenesPermitidos.includes(origen)) return callback(null, true);
+        try {
+          const url = new URL(origen);
+          const esLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+          if (esLocal && (url.protocol === 'http:' || url.protocol === 'https:')) {
+            return callback(null, true);
+          }
+        } catch {
+          // Origen con formato inválido: se rechaza abajo.
+        }
+        return callback(null, false);
+      }
+    : origenesPermitidos;
+
   await app.register(cors, {
-    origin: origenesCors(env),
+    origin: origenCors,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
@@ -60,6 +83,7 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     ...(clienteS3 ? { almacenamiento: () => verificarBucket(clienteS3, env.S3_BUCKET) } : {}),
   };
   registrarRutasSalud(app, chequeos);
+  registrarRutasPerfil(app, opciones.repositorioPerfil ?? crearRepositorioPerfil(pool));
 
   // Ruta mínima autenticada para verificar la cadena de token (Fase 0).
   app.get(

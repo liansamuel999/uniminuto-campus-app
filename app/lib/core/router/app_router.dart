@@ -6,42 +6,39 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/carnet/presentation/carnet_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/perfil/presentation/perfil_page.dart';
+import '../../features/perfil/presentation/error_sesion_page.dart';
 import '../session/session_controller.dart';
 import '../widgets/proximamente_page.dart';
 import 'app_shell.dart';
 
-/// Rutas declarativas con guarda por sesión (§3.2, D-38). Las guardas por rol llegan en la Fase 1.
+/// Rutas declarativas con guarda de sesión (§3.2, D-38).
 final routerProvider = Provider<GoRouter>((ref) {
-  final autenticado = ref.watch(sessionProvider.select((sesion) => sesion.autenticado));
+  final sesion = ref.watch(sesionProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/cargando',
     debugLogDiagnostics: false,
     redirect: (context, estado) {
-      final enLogin = estado.matchedLocation == '/login';
-      if (!autenticado && !enLogin) return '/login';
-      if (autenticado && enLogin) return '/inicio';
+      final ruta = estado.matchedLocation;
+      final cargando = sesion.isLoading && !sesion.hasValue;
+
+      if (cargando) return ruta == '/cargando' ? null : '/cargando';
+      if (sesion.hasError) return ruta == '/error-sesion' ? null : '/error-sesion';
+
+      final autenticado = sesion.valueOrNull != null;
+      if (!autenticado) return ruta == '/login' ? null : '/login';
+      if (ruta == '/login' || ruta == '/cargando' || ruta == '/error-sesion') return '/inicio';
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        name: 'login',
-        builder: (context, estado) => const LoginPage(),
-      ),
+      GoRoute(path: '/cargando', builder: (context, estado) => const _CargandoPage()),
+      GoRoute(path: '/login', name: 'login', builder: (context, estado) => const LoginPage()),
+      GoRoute(path: '/error-sesion', builder: (context, estado) => const ErrorSesionPage()),
       ShellRoute(
         builder: (context, estado, child) => AppShell(child: child),
         routes: [
-          GoRoute(
-            path: '/inicio',
-            name: 'inicio',
-            builder: (context, estado) => const HomePage(),
-          ),
-          GoRoute(
-            path: '/carnet',
-            name: 'carnet',
-            builder: (context, estado) => const CarnetPage(),
-          ),
+          GoRoute(path: '/inicio', name: 'inicio', builder: (context, estado) => const HomePage()),
+          GoRoute(path: '/carnet', name: 'carnet', builder: (context, estado) => const CarnetPage()),
           GoRoute(
             path: '/aulas',
             name: 'aulas',
@@ -62,13 +59,29 @@ final routerProvider = Provider<GoRouter>((ref) {
               icono: Icons.qr_code_scanner_outlined,
             ),
           ),
-          GoRoute(
-            path: '/perfil',
-            name: 'perfil',
-            builder: (context, estado) => const PerfilPage(),
-          ),
+          GoRoute(path: '/perfil', name: 'perfil', builder: (context, estado) => const PerfilPage()),
         ],
       ),
     ],
   );
 });
+
+class _CargandoPage extends StatelessWidget {
+  const _CargandoPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Cargando tu sesión…'),
+          ],
+        ),
+      ),
+    );
+  }
+}

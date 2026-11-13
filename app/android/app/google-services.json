@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "853524445780",
+    "project_id": "uniminuto-campus-app",
+    "storage_bucket": "uniminuto-campus-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:853524445780:android:415dbfffc8aa51ee340bc1",
+        "android_client_info": {
+          "package_name": "co.edu.uniminuto.demo.campus_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "853524445780-ljuu1cca821jne1a75heupgbds92fbvh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgReaf3fQ_Hpzdflr24yxSy8_QiJVMdRY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "853524445780-ljuu1cca821jne1a75heupgbds92fbvh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -27,6 +27,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | H. Infraestructura local | D-58 | 0 |
 | I. Credenciales locales | D-59 | 0 |
 | J. Claves institucionales | D-60 | 0B |
+| K. Semilla y demo | D-61 – D-62 | 1 |
 
 ---
 
@@ -68,6 +69,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | D-22 | CORS con lista explícita de `CORS_ORIGINS`, sin comodines; métodos y cabeceras declarados. Sin rate-limit ni helmet en la muestra (Render/Hosting ya dan TLS). | `origin: true` o `*`. |
 | D-23 | `API_BASE_URL` incluye el prefijo completo (`https://host/api/v1`); el cliente añade rutas relativas. | Concatenar `/api/v1` en cada llamada. |
 | D-24 | No se genera OpenAPI/Swagger: el contrato es §7.7 más este registro. | Documentación automática (alcance no pedido). |
+| D-63 | En `ENTORNO=dev`, CORS acepta además cualquier puerto de `localhost`/`127.0.0.1` (Flutter Web elige un puerto aleatorio en cada `flutter run`) sin abrir el origen a dominios externos; en producción solo aplica la lista explícita de `CORS_ORIGINS`. | Fijar un puerto con `--web-port` (frágil y fácil de olvidar) o permitir `*` (prohibido por D-22). |
 
 ## D. Seguridad y criptografía
 
@@ -145,6 +147,15 @@ el alcance ni los contratos fijados en el documento fuente.
 | ID | Decisión registrada | Alternativa descartada |
 |---|---|---|
 | D-60 | El par ES256 institucional se genera con `infra/scripts/generate-keys.mjs` (WebCrypto nativo, sin dependencias). La privada queda en `infra/keys/institution_private.jwk.json` (ignorada por git) y se carga con `INSTITUTION_PRIVATE_KEY_PATH` (relativa a `api/`) o con `INSTITUTION_PRIVATE_KEY` (JWK en una línea, para Render). La pública se publica como **JWKS** versionado en `app/assets/keys/institution_jwks.json` (array de claves con `kid`, `alg: ES256`, `use: sig`), para que el validador pueda rotar claves sin recompilar a ciegas. El `kid` sigue el formato `inst-<año-mes>-<6 hex>` para no engordar el QR. | Clave única sin `kid`; guardar la privada en el repositorio; embeber la privada en la app (prohibido por §6.1). |
+
+---
+
+## K. Semilla y demo
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-61 | El script de semilla vive en **`api/scripts/seed/`** (no en `infra/scripts/`) porque necesita las mismas dependencias de la API (`pg`, `firebase-admin`, `zod`, configuración de entorno) y las reglas de idempotencia del dominio. Se ejecuta con `npm run db:seed` desde la raíz, es idempotente por clave natural (correo, código, salón) y, si no hay cuenta de servicio, siembra la base con uids locales `demo-local-<código>` y avisa. | Duplicar `package.json`/`node_modules` en `infra/` solo para el script, o mover dependencias de la API a la raíz. |
+| D-62 | El login precarga las credenciales de demostración y muestra un recordatorio de las cuentas de prueba **solo cuando `ENTORNO=dev`** (`AppConfig.esProduccion == false`). En producción el formulario arranca vacío. | Credenciales visibles siempre (riesgo de confusión en la demo pública). |
 
 ---
 

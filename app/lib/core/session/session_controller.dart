@@ -1,61 +1,60 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Roles de la matriz RBAC (§5), en el mismo orden que la API.
-const List<String> rolesDelSistema = <String>[
-  'ESTUDIANTE',
-  'DOCENTE',
-  'ADMIN_ACADEMICO',
-  'ADMIN_ESPACIOS',
-  'SEGURIDAD',
-  'SOPORTE',
-  'AUDITOR',
-];
+import '../../features/perfil/domain/perfil_usuario.dart';
+import '../providers/app_providers.dart';
 
-/// Estado de sesión del cliente. El rol activo es solo de interfaz (D-21).
-class SessionState {
-  const SessionState({this.uid, this.roles = const <String>[], this.rolActivo});
+/// Sesión activa: identidad de Firebase, perfil de la API y roles de los *custom claims*.
+class Sesion {
+  const Sesion({
+    required this.uid,
+    required this.perfil,
+    required this.roles,
+    this.correo,
+  });
 
-  final String? uid;
+  final String uid;
+  final PerfilUsuario perfil;
   final List<String> roles;
-  final String? rolActivo;
+  final String? correo;
 
-  bool get autenticado => uid != null;
-
-  SessionState copyWith({
-    String? uid,
-    List<String>? roles,
-    String? rolActivo,
-  }) {
-    return SessionState(
-      uid: uid ?? this.uid,
-      roles: roles ?? this.roles,
-      rolActivo: rolActivo ?? this.rolActivo,
-    );
-  }
+  /// Rol con el que se pinta la navegación; el servidor autoriza por los claims completos (D-21).
+  String? get rolPorDefecto => roles.isEmpty ? null : roles.first;
 }
 
-/// Sesión de la app. En la Fase 0B solo admite el modo muestra; la Fase 1 la conecta a Firebase.
-class SessionController extends Notifier<SessionState> {
-  @override
-  SessionState build() => const SessionState();
+/// Usuario de Firebase (o `null` si no hay sesión). Es la fuente de verdad de la autenticación.
+final usuarioFirebaseProvider = StreamProvider<User?>((ref) {
+  return ref.watch(firebaseAuthProvider).authStateChanges();
+});
 
-  /// Entrada temporal para verificar el esqueleto sin Firebase (se retira en la Fase 1).
-  void entrarEnModoMuestra() {
-    state = const SessionState(
-      uid: 'modo-muestra',
-      roles: <String>['ESTUDIANTE'],
-      rolActivo: 'ESTUDIANTE',
-    );
-  }
+/// Sesión completa: espera al usuario, lee los claims y pide `GET /mi-perfil`.
+final sesionProvider = FutureProvider<Sesion?>((ref) async {
+  final usuario = await ref.watch(usuarioFirebaseProvider.future);
+  if (usuario == null) return null;
 
-  void cambiarRolActivo(String rol) {
-    if (!state.roles.contains(rol)) return;
-    state = state.copyWith(rolActivo: rol);
-  }
+  final repositorio = ref.watch(authRepositoryProvider);
+  final resultadoDelToken = await usuario.getIdTokenResult(true);
+  final rolesDelClaim = (resultadoDelToken.claims?['roles'] as List<dynamic>? ?? const [])
+      .map((rol) => '$rol')
+      .toList(growable: false);
 
-  void cerrarSesion() {
-    state = const SessionState();
-  }
+  final json = await repositorio.api.getJson('/mi-perfil');
+  final perfil = PerfilUsuario.fromJson(json);
+
+  return Sesion(
+    uid: usuario.uid,
+    correo: usuario.email,
+    perfil: perfil,
+    roles: rolesDelClaim.isNotEmpty ? rolesDelClaim : perfil.roles,
+  );
+});
+
+/// Rol elegido en la interfaz (solo afecta la navegación; no cambia permisos).
+final rolActivoProvider = StateProvider<String?>((ref) => null);
+
+/// Rol efectivo para pintar la barra inferior.
+String? rolEfectivo(WidgetRef ref, Sesion sesion) {
+  final elegido = ref.watch(rolActivoProvider);
+  if (elegido != null && sesion.roles.contains(elegido)) return elegido;
+  return sesion.rolPorDefecto;
 }
-
-final sessionProvider = NotifierProvider<SessionController, SessionState>(SessionController.new);

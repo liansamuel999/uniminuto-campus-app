@@ -32,12 +32,14 @@ flutter analyze
 flutter test
 ```
 
-## Notas de la Fase 0B
+## Notas de la Fase 1
 
-- `lib/core/config/firebase_options.dart` es un **archivo de ejemplo** (`kFirebaseConfigurado ==
-  false`). La Fase 1 lo reemplaza con `flutterfire configure` y el login real empieza a funcionar.
-  Mientras tanto el login ofrece "Entrar en modo muestra" para verificar la navegación.
-- Las dependencias de QR, escáner y claves (`qr_flutter`, `barcode_widget`, `mobile_scanner`,
-  `dart_jsonwebtoken`, `flutter_secure_storage`) se añaden en la Fase 2, cuando se usan.
-- `env/dev.json` y `env/prod.json` no contienen secretos: solo `API_BASE_URL` y `ENTORNO` (§7.2).
-- En Web, `PhoneFrame` limita la app a 430 px y simula un teléfono en pantallas > 600 px.
+- `lib/firebase_options.dart` es el archivo **real** generado por `flutterfire configure` para el
+  proyecto `uniminuto-campus-app` (identificadores públicos, sin secretos). `android/app/
+  google-services.json` también está versionado por la misma razón.
+- El login usa Firebase Authentication (correo + contraseña) y el router espera la sesión:
+  `/cargando` → `/login` o `/inicio`. Los roles se leen de los *custom claims* y se contrastan con
+  `GET /api/v1/mi-perfil`.
+- La semilla crea las cuentas de demostración (`Demo1234*`). En `ENTORNO=dev` el formulario llega
+  precargado y muestra el recordatorio de cuentas (D-62).
+- El cambio de contraseña pide la contraseña actual (reautenticación) antes de actualizarla.
