@@ -66,6 +66,16 @@ class ApiClient {
     return _ejecutar(() => _dio.delete<Map<String, dynamic>>(ruta));
   }
 
+  /// GET que devuelve una lista JSON (p. ej. espacios reservables).
+  Future<List<dynamic>> getList(String ruta) async {
+    try {
+      final respuesta = await _dio.get<List<dynamic>>(ruta);
+      return respuesta.data ?? const [];
+    } on DioException catch (error) {
+      throw _traducir(error);
+    }
+  }
+
   /// Ejecuta la petición y homogeneiza los errores en [ApiException] (D-17).
   Future<Map<String, dynamic>> _ejecutar(
     Future<Response<Map<String, dynamic>>> Function() peticion,

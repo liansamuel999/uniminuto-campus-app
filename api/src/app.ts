@@ -14,6 +14,11 @@ import {
 } from './modules/acceso/acceso.js';
 import { FirmanteCarnet } from './lib/pki.js';
 import { leerClaveInstitucional } from './config/institution_keys.js';
+import {
+  crearRepositorioReservaciones,
+  registrarRutasReservaciones,
+  type RepositorioReservaciones,
+} from './modules/reservaciones/reservaciones.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -30,6 +35,8 @@ export interface OpcionesApp {
   repositorioCarnet?: RepositorioCarnet;
   /** Permite inyectar el repositorio de acceso/auditoría (pruebas). */
   repositorioAcceso?: RepositorioAcceso;
+  /** Permite inyectar el repositorio de reservaciones (pruebas). */
+  repositorioReservaciones?: RepositorioReservaciones;
   logger?: boolean;
 }
 
@@ -134,6 +141,10 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     registrarRutasCarnet(app, repositorioCarnet);
   }
   registrarRutasAcceso(app, opciones.repositorioAcceso ?? crearRepositorioAcceso(pool));
+  registrarRutasReservaciones(
+    app,
+    opciones.repositorioReservaciones ?? crearRepositorioReservaciones(pool),
+  );
 
   // Ruta mínima autenticada para verificar la cadena de token (Fase 0).
   app.get(

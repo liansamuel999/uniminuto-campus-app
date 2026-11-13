@@ -8,6 +8,7 @@ import '../../features/home/presentation/home_page.dart';
 import '../../features/perfil/presentation/perfil_page.dart';
 import '../../features/perfil/presentation/error_sesion_page.dart';
 import '../../features/validador/presentation/validador_page.dart';
+import '../../features/reservaciones/presentation/reservas_page.dart';
 import '../session/session_controller.dart';
 import '../widgets/proximamente_page.dart';
 import 'app_shell.dart';
@@ -56,6 +57,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, estado) => const ValidadorPage(),
           ),
           GoRoute(path: '/perfil', name: 'perfil', builder: (context, estado) => const PerfilPage()),
+          GoRoute(path: '/reservas', name: 'reservas', builder: (context, estado) => const ReservasPage()),
         ],
       ),
     ],

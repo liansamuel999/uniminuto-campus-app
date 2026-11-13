@@ -23,6 +23,7 @@ class HomePage extends ConsumerWidget {
     _Acceso('Carnet digital', 'QR dinámico, código de barras y dispositivo vinculado.', Icons.badge_outlined, '/carnet', 'Fase 2'),
     _Acceso('Aulas virtuales', 'Contenidos, tareas y foros de tus asignaturas.', Icons.school_outlined, '/aulas', 'Fase 3'),
     _Acceso('Horario y notas', 'Asignaturas, cortes y ubicación de tu salón.', Icons.event_note_outlined, null, 'Fase 4'),
+    _Acceso('Reservas', 'Cabinas y salas de autorecreación por hora.', Icons.event_seat_outlined, '/reservas', 'Nueva'),
     _Acceso('Perfil', 'Datos de la cuenta, roles y cambio de contraseña.', Icons.person_outline, '/perfil', 'Fase 1'),
   ];
 

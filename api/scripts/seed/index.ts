@@ -192,8 +192,32 @@ async function sembrarCampus(cliente: PoolClient): Promise<void> {
   }
 }
 
-async function principal(): Promise<void> {
-  log(`Sembrando datos contra ${new URL(env.DATABASE_URL).host}`);
+/** Cabinas y salas de autorecreación solicitadas por el cliente (Fase 3). */
+async function sembrarEspaciosReservables(cliente: PoolClient): Promise<void> {
+  const espacios: Array<readonly [string, 'INDIVIDUAL' | 'GRUPO', number]> = [
+    ['Cabina 1', 'INDIVIDUAL', 1],
+    ['Cabina 2', 'INDIVIDUAL', 1],
+    ['Cabina 3', 'INDIVIDUAL', 1],
+    ['Cabina 4', 'INDIVIDUAL', 1],
+    ['Cabina 5', 'INDIVIDUAL', 1],
+    ['Cabina 6', 'INDIVIDUAL', 1],
+    ['Sala A (4 personas)', 'GRUPO', 4],
+    ['Sala B (4 personas)', 'GRUPO', 4],
+    ['Sala C (4 personas)', 'GRUPO', 4],
+    ['Sala D (5 personas)', 'GRUPO', 5],
+    ['Sala E (6 personas)', 'GRUPO', 6],
+  ];
+
+  for (const [nombre, tipo, capacidad] of espacios) {
+    await cliente.query(
+      `INSERT INTO espacio_reservable (nombre, tipo, capacidad, activo) VALUES ($1, $2, $3, true)
+       ON CONFLICT (nombre) DO UPDATE SET tipo = EXCLUDED.tipo, capacidad = EXCLUDED.capacidad, activo = true`,
+      [nombre, tipo, capacidad],
+    );
+  }
+}
+
+async function principal(): Promise<void> {  log(`Sembrando datos contra ${new URL(env.DATABASE_URL).host}`);
 
   const usuariosSembrados: UsuarioSembrado[] = [];
 
@@ -204,6 +228,9 @@ async function principal(): Promise<void> {
 
     log('Campus Calle 80 (edificios, pisos y salones)');
     await sembrarCampus(cliente);
+
+    log('Espacios de autorecreación (cabinas y salas)');
+    await sembrarEspaciosReservables(cliente);
 
     log('Usuarios, roles y claims');
     for (const usuario of USUARIOS) {
