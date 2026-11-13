@@ -217,6 +217,127 @@ async function sembrarEspaciosReservables(cliente: PoolClient): Promise<void> {
   }
 }
 
+/** Aula virtual con 3 cortes, 2 unidades, contenidos, actividades y una nota de ejemplo. */
+async function sembrarAulaVirtual(
+  cliente: PoolClient,
+  datos: { grupoId: string; nombre: string; estudiantes: UsuarioSembrado[] },
+): Promise<void> {
+  const cortes: Record<number, string> = {};
+  for (const [numero, peso] of [[1, 30], [2, 30], [3, 40]] as const) {
+    const fila = await cliente.query<{ id: string }>(
+      `INSERT INTO corte (grupo_id, numero, peso_porcentual) VALUES ($1, $2, $3)
+       ON CONFLICT (grupo_id, numero) DO UPDATE SET peso_porcentual = EXCLUDED.peso_porcentual
+       RETURNING id`,
+      [datos.grupoId, numero, peso],
+    );
+    cortes[numero] = fila.rows[0]!.id;
+  }
+
+  const aula = await cliente.query<{ id: string }>(
+    `INSERT INTO aula (grupo_id, nombre, descripcion) VALUES ($1, $2, 'Aula virtual de la asignatura')
+     ON CONFLICT (grupo_id) DO UPDATE SET nombre = EXCLUDED.nombre
+     RETURNING id`,
+    [datos.grupoId, datos.nombre],
+  );
+  const aulaId = aula.rows[0]!.id;
+
+  const unidades = [
+    { numero: 1, titulo: 'Fundamentos y entorno de trabajo' },
+    { numero: 2, titulo: 'Aplicación práctica y evaluación' },
+  ] as const;
+
+  for (const unidad of unidades) {
+    const filaUnidad = await cliente.query<{ id: string }>(
+      `INSERT INTO unidad (aula_id, numero, titulo) VALUES ($1, $2, $3)
+       ON CONFLICT (aula_id, numero) DO UPDATE SET titulo = EXCLUDED.titulo
+       RETURNING id`,
+      [aulaId, unidad.numero, unidad.titulo],
+    );
+    const unidadId = filaUnidad.rows[0]!.id;
+
+    const contenidos = unidad.numero === 1
+      ? [
+          { tipo: 'PDF', titulo: 'Guía de la unidad', objetoKey: 'aulas/demo/guia-unidad.pdf', mime: 'application/pdf' },
+          { tipo: 'ENLACE', titulo: 'Documentación recomendada', url: 'https://developer.mozilla.org/es/' },
+        ]
+      : [
+          { tipo: 'VIDEO', titulo: 'Video de la unidad', objetoKey: 'aulas/demo/video-unidad.mp4', mime: 'video/mp4' },
+          { tipo: 'ANUNCIO', titulo: 'Recordatorio de entrega' },
+        ];
+
+    for (const contenido of contenidos) {
+      const existe = await cliente.query(
+        'SELECT 1 FROM contenido WHERE unidad_id = $1 AND titulo = $2',
+        [unidadId, contenido.titulo],
+      );
+      if ((existe.rowCount ?? 0) > 0) continue;
+      await cliente.query(
+        `INSERT INTO contenido (unidad_id, tipo, titulo, objeto_key, url_externa, mime)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [unidadId, contenido.tipo, contenido.titulo, contenido.objetoKey ?? null, contenido.url ?? null, contenido.mime ?? null],
+      );
+    }
+
+    const actividades = unidad.numero === 1
+      ? [
+          { tipo: 'TAREA', titulo: 'Taller de la unidad 1', peso: 50, corte: 1 },
+          { tipo: 'CUESTIONARIO', titulo: 'Cuestionario de la unidad 1', peso: 50, corte: 1 },
+        ]
+      : [
+          { tipo: 'FORO', titulo: 'Foro de discusión', peso: 40, corte: 2 },
+        ];
+
+    for (const actividad of actividades) {
+      const existeActividad = await cliente.query(
+        'SELECT 1 FROM actividad WHERE unidad_id = $1 AND titulo = $2',
+        [unidadId, actividad.titulo],
+      );
+      if ((existeActividad.rowCount ?? 0) > 0) continue;
+
+      const filaActividad = await cliente.query<{ id: string }>(
+        `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual)
+         VALUES ($1, $2, $3, 'Actividad de demostración con datos ficticios', now() + interval '14 days', $4, $5)
+         RETURNING id`,
+        [unidadId, actividad.tipo, actividad.titulo, cortes[actividad.corte], actividad.peso],
+      );
+      const actividadId = filaActividad.rows[0]?.id;
+      if (!actividadId) continue;
+
+      if (actividad.tipo === 'CUESTIONARIO') {
+        for (let orden = 1; orden <= 3; orden += 1) {
+          const pregunta = await cliente.query<{ id: string }>(
+            `INSERT INTO pregunta (actividad_id, enunciado, orden) VALUES ($1, $2, $3) RETURNING id`,
+            [actividadId, `Pregunta ${orden} de la unidad 1`, orden],
+          );
+          const preguntaId = pregunta.rows[0]!.id;
+          for (const [indice, texto] of ['Opción A', 'Opción B', 'Opción C'].entries()) {
+            await cliente.query(
+              `INSERT INTO opcion_respuesta (pregunta_id, texto, es_correcta, orden) VALUES ($1, $2, $3, $4)`,
+              [preguntaId, texto, indice === 0, indice + 1],
+            );
+          }
+        }
+      }
+
+      if (actividad.tipo === 'TAREA' && datos.estudiantes.length > 0) {
+        const inscripcion = await cliente.query<{ id: string }>(
+          'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
+          [datos.estudiantes[0]!.id, datos.grupoId],
+        );
+        const inscripcionId = inscripcion.rows[0]?.id;
+        if (inscripcionId) {
+          await cliente.query(
+            `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+             VALUES ($1, $2, 4.2, 'Buen trabajo en la demostración')
+             ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+            [actividadId, inscripcionId],
+          );
+        }
+      }
+    }
+  }
+}
+
 async function principal(): Promise<void> {  log(`Sembrando datos contra ${new URL(env.DATABASE_URL).host}`);
 
   const usuariosSembrados: UsuarioSembrado[] = [];
@@ -267,6 +388,12 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       );
       const grupoId = filaGrupo.rows[0]!.id;
 
+      await sembrarAulaVirtual(cliente, {
+        grupoId,
+        nombre: `${asignatura.nombre} · Grupo 01`,
+        estudiantes: usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE'),
+      });
+
       for (const estudiante of usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE')) {
         await cliente.query(
           `INSERT INTO inscripcion (estudiante_id, grupo_id, estado) VALUES ($1, $2, 'ACTIVA')
@@ -311,6 +438,7 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
 
 principal().catch(async (error) => {
   console.error('La semilla falló:', error instanceof Error ? error.message : error);
+  if (error instanceof Error && error.stack) console.error(error.stack);
   await pool.end().catch(() => undefined);
   process.exit(1);
 });

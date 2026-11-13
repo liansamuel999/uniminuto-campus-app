@@ -1,0 +1,307 @@
+import type { FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
+import { z } from 'zod';
+
+import { errores } from '../../lib/errors.js';
+import { resumirNotas, type ActividadCalificada, type CorteConActividades } from '../../lib/notas.js';
+
+export interface AulaResumen {
+  id: string;
+  nombre: string;
+  asignatura: string;
+  codigo: string;
+  periodo: string;
+  grupo: string;
+}
+
+export interface ContenidoAula {
+  id: string;
+  tipo: string;
+  titulo: string;
+  descripcion: string | null;
+  urlExterna: string | null;
+  objetoKey: string | null;
+}
+
+export interface ActividadAula {
+  id: string;
+  tipo: string;
+  titulo: string;
+  instrucciones: string | null;
+  cierraEn: string | null;
+  peso: number;
+  notaMaxima: number;
+  corte: number;
+}
+
+export interface UnidadAula {
+  id: string;
+  numero: number;
+  titulo: string;
+  contenidos: ContenidoAula[];
+  actividades: ActividadAula[];
+}
+
+export interface DetalleAula extends AulaResumen {
+  unidades: UnidadAula[];
+}
+
+export interface NotaActividad {
+  actividadId: string;
+  titulo: string;
+  peso: number;
+  notaMaxima: number;
+  nota: number | null;
+  retroalimentacion: string | null;
+}
+
+export interface NotaAsignatura {
+  inscripcionId: string;
+  asignatura: string;
+  codigo: string;
+  cortes: Array<{ numero: number; peso: number; nota: number | null; actividades: NotaActividad[] }>;
+  definitiva: number;
+}
+
+export interface RepositorioAulas {
+  listar(uidFirebase: string, esAdmin: boolean): Promise<AulaResumen[]>;
+  detalle(aulaId: string, uidFirebase: string, esAdmin: boolean): Promise<DetalleAula | null>;
+  misNotas(uidFirebase: string, periodo?: string): Promise<NotaAsignatura[]>;
+}
+
+const ACCESO = `(
+  $2::boolean = true
+  OR g.docente_id = u.id
+  OR EXISTS (SELECT 1 FROM inscripcion i WHERE i.grupo_id = g.id AND i.estudiante_id = u.id)
+)`;
+
+const BASE_AULA = `
+  FROM aula a
+  JOIN grupo g ON g.id = a.grupo_id
+  JOIN asignatura asg ON asg.id = g.asignatura_id
+  JOIN periodo p ON p.id = g.periodo_id
+  JOIN usuario u ON u.uid_firebase = $1
+`;
+
+export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
+  return {
+    async listar(uidFirebase, esAdmin) {
+      const resultado = await pool.query<AulaResumen>(
+        `SELECT a.id, a.nombre, asg.nombre AS asignatura, asg.codigo, p.codigo AS periodo,
+                g.numero_grupo AS grupo
+         ${BASE_AULA}
+         WHERE ${ACCESO}
+         ORDER BY asg.nombre`,
+        [uidFirebase, esAdmin],
+      );
+      return resultado.rows;
+    },
+
+    async detalle(aulaId, uidFirebase, esAdmin) {
+      const aula = await pool.query<AulaResumen>(
+        `SELECT a.id, a.nombre, asg.nombre AS asignatura, asg.codigo, p.codigo AS periodo,
+                g.numero_grupo AS grupo
+         ${BASE_AULA}
+         WHERE a.id = $3 AND ${ACCESO}`,
+        [uidFirebase, esAdmin, aulaId],
+      );
+      const filaAula = aula.rows[0];
+      if (!filaAula) return null;
+
+      const unidades = await pool.query<{ id: string; numero: number; titulo: string }>(
+        'SELECT id, numero, titulo FROM unidad WHERE aula_id = $1 ORDER BY numero',
+        [aulaId],
+      );
+      const contenidos = await pool.query<{
+        id: string;
+        unidad_id: string;
+        tipo: string;
+        titulo: string;
+        descripcion: string | null;
+        url_externa: string | null;
+        objeto_key: string | null;
+      }>(
+        'SELECT id, unidad_id, tipo, titulo, descripcion, url_externa, objeto_key FROM contenido WHERE unidad_id = ANY($1::uuid[]) ORDER BY titulo',
+        [unidades.rows.map((unidad) => unidad.id)],
+      );
+      const actividades = await pool.query<{
+        id: string;
+        unidad_id: string;
+        tipo: string;
+        titulo: string;
+        instrucciones: string | null;
+        cierra_en: string | Date | null;
+        peso_porcentual: string;
+        nota_maxima: string;
+        numero: number;
+      }>(
+        `SELECT a.id, a.unidad_id, a.tipo, a.titulo, a.instrucciones, a.cierra_en,
+                a.peso_porcentual, a.nota_maxima, c.numero
+         FROM actividad a JOIN corte c ON c.id = a.corte_id
+         WHERE a.unidad_id = ANY($1::uuid[]) ORDER BY a.titulo`,
+        [unidades.rows.map((unidad) => unidad.id)],
+      );
+
+      return {
+        ...filaAula,
+        unidades: unidades.rows.map((unidad) => ({
+          id: unidad.id,
+          numero: unidad.numero,
+          titulo: unidad.titulo,
+          contenidos: contenidos.rows
+            .filter((contenido) => contenido.unidad_id === unidad.id)
+            .map((contenido) => ({
+              id: contenido.id,
+              tipo: contenido.tipo,
+              titulo: contenido.titulo,
+              descripcion: contenido.descripcion,
+              urlExterna: contenido.url_externa,
+              objetoKey: contenido.objeto_key,
+            })),
+          actividades: actividades.rows
+            .filter((actividad) => actividad.unidad_id === unidad.id)
+            .map((actividad) => ({
+              id: actividad.id,
+              tipo: actividad.tipo,
+              titulo: actividad.titulo,
+              instrucciones: actividad.instrucciones,
+              cierraEn:
+                actividad.cierra_en === null
+                  ? null
+                  : (actividad.cierra_en instanceof Date
+                      ? actividad.cierra_en
+                      : new Date(actividad.cierra_en)
+                    ).toISOString(),
+              peso: Number(actividad.peso_porcentual),
+              notaMaxima: Number(actividad.nota_maxima),
+              corte: actividad.numero,
+            })),
+        })),
+      };
+    },
+
+    async misNotas(uidFirebase, periodo) {
+      const filas = await pool.query<{
+        inscripcion_id: string;
+        asignatura: string;
+        codigo: string;
+        corte_id: string;
+        numero: number;
+        corte_peso: string;
+        actividad_id: string | null;
+        titulo: string | null;
+        act_peso: string | null;
+        nota_maxima: string | null;
+        nota: string | null;
+        retroalimentacion: string | null;
+      }>(
+        `SELECT i.id AS inscripcion_id, asg.nombre AS asignatura, asg.codigo,
+                c.id AS corte_id, c.numero, c.peso_porcentual AS corte_peso,
+                a.id AS actividad_id, a.titulo, a.peso_porcentual AS act_peso,
+                a.nota_maxima, cal.nota, cal.retroalimentacion
+         FROM inscripcion i
+         JOIN grupo g ON g.id = i.grupo_id
+         JOIN asignatura asg ON asg.id = g.asignatura_id
+         JOIN periodo p ON p.id = g.periodo_id
+         JOIN corte c ON c.grupo_id = g.id
+         LEFT JOIN actividad a ON a.corte_id = c.id
+         LEFT JOIN calificacion cal ON cal.actividad_id = a.id AND cal.inscripcion_id = i.id
+         JOIN usuario u ON u.id = i.estudiante_id
+         WHERE u.uid_firebase = $1 AND ($2::text IS NULL OR p.codigo = $2)
+         ORDER BY asg.nombre, c.numero, a.titulo`,
+        [uidFirebase, periodo ?? null],
+      );
+
+      type Acumulada = {
+        inscripcionId: string;
+        asignatura: string;
+        codigo: string;
+        cortes: Map<string, { numero: number; peso: number; actividades: ActividadCalificada[] }>;
+      };
+      const porInscripcion = new Map<string, Acumulada>();
+
+      for (const fila of filas.rows) {
+        const actual =
+          porInscripcion.get(fila.inscripcion_id) ??
+          {
+            inscripcionId: fila.inscripcion_id,
+            asignatura: fila.asignatura,
+            codigo: fila.codigo,
+            cortes: new Map(),
+          };
+        porInscripcion.set(fila.inscripcion_id, actual);
+
+        const corte =
+          actual.cortes.get(fila.corte_id) ??
+          { numero: fila.numero, peso: Number(fila.corte_peso), actividades: [] };
+        actual.cortes.set(fila.corte_id, corte);
+
+        if (fila.actividad_id) {
+          corte.actividades.push({
+            actividadId: fila.actividad_id,
+            titulo: fila.titulo ?? '',
+            peso: Number(fila.act_peso ?? 0),
+            notaMaxima: Number(fila.nota_maxima ?? 5),
+            nota: fila.nota === null ? null : Number(fila.nota),
+            retroalimentacion: fila.retroalimentacion,
+          });
+        }
+      }
+
+      return [...porInscripcion.values()].map((acumulada) => {
+        const cortes = [...acumulada.cortes.entries()]
+          .map(([corteId, corte]) => ({
+            corteId,
+            numero: corte.numero,
+            peso: corte.peso,
+            actividades: corte.actividades,
+          }))
+          .sort((a, b) => a.numero - b.numero);
+
+        const resumen = resumirNotas(cortes as CorteConActividades[]);
+        return {
+          inscripcionId: acumulada.inscripcionId,
+          asignatura: acumulada.asignatura,
+          codigo: acumulada.codigo,
+          definitiva: resumen.definitiva,
+          cortes: cortes.map((corte, indice) => ({
+            numero: corte.numero,
+            peso: corte.peso,
+            nota: resumen.cortes[indice]?.nota ?? null,
+            actividades: corte.actividades.map((actividad: ActividadCalificada) => ({
+              actividadId: actividad.actividadId,
+              titulo: actividad.titulo,
+              peso: actividad.peso,
+              notaMaxima: actividad.notaMaxima,
+              nota: actividad.nota,
+              retroalimentacion: actividad.retroalimentacion ?? null,
+            })),
+          })),
+        };
+      });
+    },
+  };
+}
+
+/** Rutas de Aulas Virtuales y notas del estudiante (§7.7). */
+export function registrarRutasAulas(app: FastifyInstance, repo: RepositorioAulas): void {
+  app.get('/api/v1/aulas', { preHandler: app.autenticar }, async (peticion) => {
+    const esAdmin = peticion.actor?.roles.includes('ADMIN_ACADEMICO') ?? false;
+    return repo.listar(peticion.actor!.uid, esAdmin);
+  });
+
+  app.get('/api/v1/aulas/:id', { preHandler: app.autenticar }, async (peticion) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(peticion.params);
+    const esAdmin = peticion.actor?.roles.includes('ADMIN_ACADEMICO') ?? false;
+    const detalle = await repo.detalle(id, peticion.actor!.uid, esAdmin);
+    if (!detalle) throw errores.noEncontrado('El aula no existe o no tienes acceso a ella');
+    return detalle;
+  });
+
+  app.get('/api/v1/mis-notas', { preHandler: app.autenticar }, async (peticion) => {
+    const { periodo } = z
+      .object({ periodo: z.string().regex(/^\d{4}-\d$/).optional() })
+      .parse(peticion.query);
+    return repo.misNotas(peticion.actor!.uid, periodo);
+  });
+}

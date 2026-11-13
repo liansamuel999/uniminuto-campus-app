@@ -19,6 +19,7 @@ import {
   registrarRutasReservaciones,
   type RepositorioReservaciones,
 } from './modules/reservaciones/reservaciones.js';
+import { crearRepositorioAulas, registrarRutasAulas, type RepositorioAulas } from './modules/aulas/aulas.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -37,6 +38,8 @@ export interface OpcionesApp {
   repositorioAcceso?: RepositorioAcceso;
   /** Permite inyectar el repositorio de reservaciones (pruebas). */
   repositorioReservaciones?: RepositorioReservaciones;
+  /** Permite inyectar el repositorio de aulas (pruebas). */
+  repositorioAulas?: RepositorioAulas;
   logger?: boolean;
 }
 
@@ -145,6 +148,7 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     app,
     opciones.repositorioReservaciones ?? crearRepositorioReservaciones(pool),
   );
+  registrarRutasAulas(app, opciones.repositorioAulas ?? crearRepositorioAulas(pool));
 
   // Ruta mínima autenticada para verificar la cadena de token (Fase 0).
   app.get(
