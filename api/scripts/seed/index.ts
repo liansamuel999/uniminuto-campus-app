@@ -151,9 +151,11 @@ async function sembrarCampus(cliente: PoolClient): Promise<void> {
       );
       const pisoId = filaPiso.rows[0]!.id;
 
-      const cantidad = esAdministrativo ? 6 : 10;
+      const cantidad = esAdministrativo ? 5 : 10;
+      const codigosGenerados: string[] = [];
       for (let indice = 1; indice <= cantidad; indice += 1) {
         const codigo = `${edificio.codigo}-${numero}${String(indice).padStart(2, '0')}`;
+        codigosGenerados.push(codigo);
         const tipo = esAdministrativo
           ? 'OFICINA'
           : edificio.laboratorios.includes(codigo)
@@ -165,6 +167,16 @@ async function sembrarCampus(cliente: PoolClient): Promise<void> {
           `INSERT INTO salon (piso_id, codigo, tipo, capacidad) VALUES ($1, $2, $3, $4)
            ON CONFLICT (codigo) DO UPDATE SET piso_id = EXCLUDED.piso_id, tipo = EXCLUDED.tipo, capacidad = EXCLUDED.capacidad`,
           [pisoId, codigo, tipo, capacidad],
+        );
+      }
+
+      // §4.3: entre 3 y 5 oficinas por piso administrativo. Si una ejecución anterior dejó
+      // oficinas de más, se eliminan para que la semilla converja al mismo estado.
+      if (esAdministrativo) {
+        await cliente.query(
+          `DELETE FROM salon
+           WHERE piso_id = $1 AND tipo = 'OFICINA' AND codigo <> ALL($2::text[])`,
+          [pisoId, codigosGenerados],
         );
       }
     }
