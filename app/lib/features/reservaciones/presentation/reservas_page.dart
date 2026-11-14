@@ -47,14 +47,23 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
       '${fecha.year.toString().padLeft(4, '0')}-${fecha.month.toString().padLeft(2, '0')}-${fecha.day.toString().padLeft(2, '0')}';
 
   Future<void> _cargar() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
+    if (_cargando && _espacios.isNotEmpty) return;
+    if (mounted) {
+      setState(() {
+        _cargando = true;
+        _error = null;
+      });
+    }
+    final api = ref.read(apiClientProvider);
     try {
-      final api = ref.read(apiClientProvider);
-      final semana = await api.getJson('/reservaciones/semana?desde=${_iso(_inicioSemana)}');
-      final mias = await api.getList('/reservaciones/mias');
+      // Query como parámetro (no incrustada en la ruta) y con tiempo límite para no dejar
+      // la pantalla en carga indefinida si la red se queda colgada.
+      final semana = await api
+          .getJson('/reservaciones/semana', parametros: {'desde': _iso(_inicioSemana)})
+          .timeout(const Duration(seconds: 12));
+      final mias = await api
+          .getList('/reservaciones/mias')
+          .timeout(const Duration(seconds: 12));
       if (!mounted) return;
       setState(() {
         _espacios = semana['espacios'] as List<dynamic>? ?? const [];
@@ -63,6 +72,8 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudo cargar la disponibilidad. Revisa la conexión.');
     } finally {
       if (mounted) setState(() => _cargando = false);
     }

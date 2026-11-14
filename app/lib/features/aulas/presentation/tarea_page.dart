@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,8 +19,53 @@ class TareaPage extends ConsumerStatefulWidget {
 
 class _TareaPageState extends ConsumerState<TareaPage> {
   final _texto = TextEditingController();
+  final List<Map<String, dynamic>> _adjuntos = [];
+  bool _adjuntando = false;
   bool _enviando = false;
   String? _mensaje;
+
+  Future<void> _adjuntar() async {
+    setState(() {
+      _adjuntando = true;
+      _mensaje = null;
+    });
+    try {
+      final archivo = await openFile();
+      final bytes = archivo == null ? null : await archivo.readAsBytes();
+      if (archivo == null || bytes == null) return;
+
+      final api = ref.read(apiClientProvider);
+      final firma = await api.postJson('/archivos/subida', cuerpo: {
+        'contexto': 'ENTREGA',
+        'nombre': archivo.name,
+        'mime': archivo.mimeType ?? 'application/octet-stream',
+        'tamano': bytes.length,
+      });
+
+      // El binario va directo al datalake con la URL prefirmada, sin pasar por la API.
+      await api.dio.put<dynamic>(
+        '${firma['urlPut']}',
+        data: bytes,
+        options: Options(headers: {'Content-Type': 'application/octet-stream'}),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _adjuntos.add({
+          'objetoKey': firma['objetoKey'],
+          'nombre': archivo.name,
+          'mime': 'application/octet-stream',
+          'tamano': bytes.length,
+        });
+      });
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _mensaje = error.mensaje);
+    } catch (_) {
+      if (mounted) setState(() => _mensaje = 'No se pudo adjuntar el archivo.');
+    } finally {
+      if (mounted) setState(() => _adjuntando = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -47,6 +94,7 @@ class _TareaPageState extends ConsumerState<TareaPage> {
         actividadId: '${widget.actividad['id']}',
         texto: texto,
         creadaEnCliente: creada,
+        adjuntos: _adjuntos,
       );
       if (mounted) setState(() => _mensaje = 'Guardada en el dispositivo. Se enviará al reconectar.');
       if (mounted) setState(() => _enviando = false);
@@ -59,7 +107,7 @@ class _TareaPageState extends ConsumerState<TareaPage> {
         'actividadId': '${widget.actividad['id']}',
         'texto': texto,
         'creadaEnCliente': creada.toUtc().toIso8601String(),
-        'adjuntos': const [],
+        'adjuntos': _adjuntos,
       });
       if (!mounted) return;
       setState(() => _mensaje = 'Entrega registrada como ${respuesta['estado']}.');
@@ -71,6 +119,7 @@ class _TareaPageState extends ConsumerState<TareaPage> {
           actividadId: '${widget.actividad['id']}',
           texto: texto,
           creadaEnCliente: creada,
+          adjuntos: _adjuntos,
         );
         if (mounted) setState(() => _mensaje = 'Sin conexión: quedó guardada y se enviará sola.');
       } else {
@@ -141,6 +190,26 @@ class _TareaPageState extends ConsumerState<TareaPage> {
               alignLabelWithHint: true,
             ),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _adjuntando ? null : _adjuntar,
+            icon: _adjuntando
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.attach_file),
+            label: const Text('Adjuntar archivo'),
+          ),
+          if (_adjuntos.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final adjunto in _adjuntos)
+                  Chip(
+                    label: Text(''),
+                    onDeleted: () => setState(() => _adjuntos.remove(adjunto)),
+                  ),
+              ],
+            ),
           const SizedBox(height: 10),
           if (_mensaje != null) Text(_mensaje!),
           const SizedBox(height: 10),

@@ -27,6 +27,7 @@ class ColaEntregas {
     required String actividadId,
     required String texto,
     required DateTime creadaEnCliente,
+    List<Map<String, dynamic>> adjuntos = const [],
   }) async {
     final lista = pendientes()
       ..removeWhere((item) => item['entregaId'] == entregaId)
@@ -35,6 +36,7 @@ class ColaEntregas {
         'actividadId': actividadId,
         'texto': texto,
         'creadaEnCliente': creadaEnCliente.toUtc().toIso8601String(),
+        'adjuntos': adjuntos,
       });
     await _caja.put(_clave, lista);
   }
@@ -54,7 +56,7 @@ class ColaEntregas {
           'actividadId': entrega['actividadId'],
           'texto': entrega['texto'],
           'creadaEnCliente': entrega['creadaEnCliente'],
-          'adjuntos': const [],
+          'adjuntos': entrega['adjuntos'] ?? const [],
         });
         await quitar('${entrega['entregaId']}');
         enviadas += 1;

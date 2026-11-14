@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import 'tarea_page.dart';
+import 'cuestionario_page.dart';
 
 /// Lista de aulas virtuales del usuario (estudiante, docente o admin académico).
 class AulasPage extends ConsumerStatefulWidget {
@@ -163,7 +164,9 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
                         '${actividad['tipo']} · ${actividad['peso']}% del corte ${actividad['corte']}'
                         '${actividad['cierraEn'] != null ? ' · cierra ${_fecha(actividad['cierraEn'])}' : ''}',
                       ),
-                      trailing: actividad['tipo'] == 'TAREA' ? const Icon(Icons.chevron_right) : null,
+                      trailing: actividad['tipo'] == 'TAREA' || actividad['tipo'] == 'CUESTIONARIO'
+                          ? const Icon(Icons.chevron_right)
+                          : null,
                       onTap: actividad['tipo'] == 'TAREA'
                           ? () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
@@ -172,7 +175,16 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
                                   ),
                                 ),
                               )
-                          : null,
+                          : actividad['tipo'] == 'CUESTIONARIO'
+                              ? () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CuestionarioPage(
+                                        actividadId: '${actividad['id']}',
+                                        titulo: '${actividad['titulo']}',
+                                      ),
+                                    ),
+                                  )
+                              : null,
                     ),
                 ],
               ),
