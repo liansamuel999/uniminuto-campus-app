@@ -5,7 +5,10 @@ import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 
 /// Reservas por semana: calendario de 7 días, horas libres por sala y bloques de 10 minutos
-/// entre las 06:00 y las 20:00, con un máximo de 2 horas por reserva.
+/// entre las 06:00 y las 20:00, con un máximo de 2 horas.
+///
+/// Nota de layout: la tira de días usa un `Row` con hijos `Expanded` (no un `ListView`
+/// horizontal anidado) para evitar problemas de restricciones dentro del scroll principal.
 class ReservasPage extends ConsumerStatefulWidget {
   const ReservasPage({super.key});
 
@@ -19,7 +22,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
   static const int paso = 10;
   static const int maximoMinutos = 120;
 
-  late DateTime _hoy = DateTime.now();
+  final DateTime _hoy = DateTime.now();
   late DateTime _inicioSemana = _lunesDe(_hoy);
   late DateTime _diaSeleccionado = DateTime(_hoy.year, _hoy.month, _hoy.day);
 
@@ -65,15 +68,14 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     }
   }
 
-  List<dynamic> _reservasDelDia([String? espacioId]) {
+  List<dynamic> _reservasDelDia(String espacioId) {
     return _reservasSemana.where((reserva) {
       final inicio = DateTime.tryParse('${reserva['inicio']}')?.toLocal();
       if (inicio == null) return false;
-      final mismoDia =
-          inicio.year == _diaSeleccionado.year &&
+      final mismoDia = inicio.year == _diaSeleccionado.year &&
           inicio.month == _diaSeleccionado.month &&
           inicio.day == _diaSeleccionado.day;
-      return mismoDia && (espacioId == null || '${reserva['espacioId']}' == espacioId);
+      return mismoDia && '${reserva['espacioId']}' == espacioId;
     }).toList();
   }
 
@@ -92,24 +94,30 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     final ocupados = _ocupados('${espacio['id']}');
     final inicioElegido = await showDialog<int>(
       context: context,
-      builder: (contexto) => _SelectorInicio(
-        dia: _diaSeleccionado,
-        ocupados: ocupados,
-        apertura: apertura,
-        cierre: cierre,
-        paso: paso,
+      builder: (_) => _DialogoSeleccion(
+        titulo: 'Hora de inicio',
+        opciones: [
+          for (var minuto = apertura; minuto + paso <= cierre; minuto += paso)
+            if (!ocupados.any((rango) => minuto < rango.$2 && minuto + paso > rango.$1)) minuto,
+        ],
+        etiqueta: _hora,
+        vacio: 'No hay horas libres este día.',
       ),
     );
     if (inicioElegido == null || !mounted) return;
 
     final finElegido = await showDialog<int>(
       context: context,
-      builder: (contexto) => _SelectorFin(
-        inicio: inicioElegido,
-        ocupados: ocupados,
-        cierre: cierre,
-        paso: paso,
-        maximo: maximoMinutos,
+      builder: (_) => _DialogoSeleccion(
+        titulo: 'Hora de fin (máx. 2 h)',
+        opciones: [
+          for (var fin = inicioElegido + paso;
+              fin <= inicioElegido + maximoMinutos && fin <= cierre;
+              fin += paso)
+            if (!ocupados.any((rango) => inicioElegido < rango.$2 && fin > rango.$1)) fin,
+        ],
+        etiqueta: (minuto) => '${_hora(minuto)} (${minuto - inicioElegido} min)',
+        vacio: 'No hay franjas disponibles desde esa hora.',
       ),
     );
     if (finElegido == null || !mounted) return;
@@ -200,63 +208,32 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            SizedBox(
-              height: 74,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: dias.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (contexto, indice) {
-                  final dia = dias[indice];
-                  final seleccionado = dia.year == _diaSeleccionado.year &&
-                      dia.month == _diaSeleccionado.month &&
-                      dia.day == _diaSeleccionado.day;
-                  final esHoy = dia.year == _hoy.year && dia.month == _hoy.month && dia.day == _hoy.day;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => _diaSeleccionado = dia),
-                    child: Container(
-                      width: 58,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: seleccionado ? colores.primary : colores.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: esHoy ? colores.primary : colores.outlineVariant),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            _diaSemana(dia),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: seleccionado ? colores.onPrimary : colores.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            '${dia.day}',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: seleccionado ? colores.onPrimary : colores.onSurface,
-                            ),
-                          ),
-                        ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (final dia in dias)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: _BotonDia(
+                        dia: dia,
+                        seleccionado: dia.year == _diaSeleccionado.year &&
+                            dia.month == _diaSeleccionado.month &&
+                            dia.day == _diaSeleccionado.day,
+                        esHoy: dia.year == _hoy.year && dia.month == _hoy.month && dia.day == _hoy.day,
+                        etiqueta: _diaSemana(dia),
+                        onTap: () => setState(() => _diaSeleccionado = dia),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
             if (_error != null)
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colores.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: BoxDecoration(color: colores.errorContainer, borderRadius: BorderRadius.circular(12)),
                 child: Text(_error!),
               ),
             if (_mias.isNotEmpty) ...[
@@ -264,6 +241,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
               const SizedBox(height: 6),
               for (final reserva in _mias.take(5))
                 Card(
+                  margin: const EdgeInsets.only(bottom: 6),
                   child: ListTile(
                     dense: true,
                     leading: const Icon(Icons.event_available),
@@ -300,6 +278,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
@@ -308,6 +287,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                 Expanded(
                   child: Text('${espacio['nombre']}', style: const TextStyle(fontWeight: FontWeight.w600)),
                 ),
+                const SizedBox(width: 8),
                 FilledButton.tonal(
                   onPressed: () => _reservar(espacio),
                   child: const Text('Reservar'),
@@ -316,10 +296,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
             ),
             const SizedBox(height: 6),
             if (ocupados.isEmpty)
-              Text(
-                'Libre todo el día (06:00–20:00)',
-                style: TextStyle(color: Theme.of(context).colorScheme.primary),
-              )
+              Text('Libre todo el día (06:00–20:00)', style: TextStyle(color: Theme.of(context).colorScheme.primary))
             else
               Wrap(
                 spacing: 6,
@@ -354,101 +331,122 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
   }
 }
 
-/// Selección de la hora de inicio (solo franjas libres, bloques de 10 minutos).
-class _SelectorInicio extends StatelessWidget {
-  const _SelectorInicio({
+class _BotonDia extends StatelessWidget {
+  const _BotonDia({
     required this.dia,
-    required this.ocupados,
-    required this.apertura,
-    required this.cierre,
-    required this.paso,
+    required this.seleccionado,
+    required this.esHoy,
+    required this.etiqueta,
+    required this.onTap,
   });
 
   final DateTime dia;
-  final List<(int, int)> ocupados;
-  final int apertura;
-  final int cierre;
-  final int paso;
+  final bool seleccionado;
+  final bool esHoy;
+  final String etiqueta;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final libres = <int>[];
-    for (var minuto = apertura; minuto + paso <= cierre; minuto += paso) {
-      final choca = ocupados.any((rango) => minuto < rango.$2 && minuto + paso > rango.$1);
-      if (!choca) libres.add(minuto);
-    }
-
-    return AlertDialog(
-      title: const Text('Hora de inicio'),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 320,
-        child: libres.isEmpty
-            ? const Center(child: Text('No hay horas libres este día.'))
-            : ListView.builder(
-                itemCount: libres.length,
-                itemBuilder: (contexto, indice) {
-                  final minuto = libres[indice];
-                  return ListTile(
-                    title: Text('${minuto ~/ 60}:${(minuto % 60).toString().padLeft(2, '0')}'),
-                    onTap: () => Navigator.of(contexto).pop(minuto),
-                  );
-                },
+    final colores = Theme.of(context).colorScheme;
+    return Material(
+      color: seleccionado ? colores.primary : colores.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          height: 62,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: esHoy ? colores.primary : colores.outlineVariant),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                etiqueta,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: seleccionado ? colores.onPrimary : colores.onSurfaceVariant,
+                ),
               ),
+              Text(
+                '${dia.day}',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: seleccionado ? colores.onPrimary : colores.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
-      ],
     );
   }
 }
 
-/// Selección de la hora de fin (máximo 2 horas y sin solaparse).
-class _SelectorFin extends StatelessWidget {
-  const _SelectorFin({
-    required this.inicio,
-    required this.ocupados,
-    required this.cierre,
-    required this.paso,
-    required this.maximo,
+/// Diálogo de selección de un minuto concreto (lista acotada, sin scrollables anidados).
+class _DialogoSeleccion extends StatelessWidget {
+  const _DialogoSeleccion({
+    required this.titulo,
+    required this.opciones,
+    required this.etiqueta,
+    required this.vacio,
   });
 
-  final int inicio;
-  final List<(int, int)> ocupados;
-  final int cierre;
-  final int paso;
-  final int maximo;
+  final String titulo;
+  final List<int> opciones;
+  final String Function(int) etiqueta;
+  final String vacio;
 
   @override
   Widget build(BuildContext context) {
-    final opciones = <int>[];
-    for (var fin = inicio + paso; fin <= inicio + maximo && fin <= cierre; fin += paso) {
-      final choca = ocupados.any((rango) => inicio < rango.$2 && fin > rango.$1);
-      if (!choca) opciones.add(fin);
-    }
-
-    return AlertDialog(
-      title: const Text('Hora de fin'),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 320,
-        child: opciones.isEmpty
-            ? const Center(child: Text('No hay franjas disponibles desde esa hora.'))
-            : ListView.builder(
-                itemCount: opciones.length,
-                itemBuilder: (contexto, indice) {
-                  final fin = opciones[indice];
-                  return ListTile(
-                    title: Text('${fin ~/ 60}:${(fin % 60).toString().padLeft(2, '0')}'),
-                    subtitle: Text('${fin - inicio} minutos'),
-                    onTap: () => Navigator.of(contexto).pop(fin),
-                  );
-                },
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(titulo, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Flexible(
+                child: opciones.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(vacio),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: opciones.length,
+                        itemBuilder: (contexto, indice) {
+                          final minuto = opciones[indice];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(etiqueta(minuto)),
+                            onTap: () => Navigator.of(contexto).pop(minuto),
+                          );
+                        },
+                      ),
               ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-      ],
     );
   }
 }
