@@ -15,6 +15,7 @@ class NotasPage extends ConsumerStatefulWidget {
 class _NotasPageState extends ConsumerState<NotasPage> {
   List<dynamic> _notas = const [];
   bool _cargando = true;
+  bool _desdeCache = false;
   String? _error;
 
   @override
@@ -29,8 +30,13 @@ class _NotasPageState extends ConsumerState<NotasPage> {
       _error = null;
     });
     try {
-      final notas = await ref.read(apiClientProvider).getList('/mis-notas');
-      if (mounted) setState(() => _notas = notas);
+      final (notas, desdeCache) = await ref.read(repositorioAcademicoProvider).notas();
+      if (mounted) {
+        setState(() {
+          _notas = notas;
+          _desdeCache = desdeCache;
+        });
+      }
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
     } finally {
@@ -51,6 +57,16 @@ class _NotasPageState extends ConsumerState<NotasPage> {
           padding: const EdgeInsets.all(16),
           children: [
             if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            if (_desdeCache)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text('Sin conexión: mostrando las notas guardadas en el dispositivo.'),
+              ),
             if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (!_cargando && _notas.isEmpty) const Text('Todavía no hay notas para el periodo activo.'),
             for (final asignatura in _notas) _TarjetaAsignatura(asignatura: asignatura),

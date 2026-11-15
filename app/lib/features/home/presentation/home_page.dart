@@ -24,6 +24,9 @@ class HomePage extends ConsumerWidget {
     _Acceso('Aulas virtuales', 'Contenidos, tareas, foros y anuncios de tus asignaturas.', Icons.school_outlined, '/aulas', 'Fase 3'),
     _Acceso('Bandeja simulada', 'Correos replicados de los anuncios importantes.', Icons.mark_email_unread_outlined, '/correos', 'Fase 3'),
     _Acceso('Mis notas', 'Definitiva, cortes y detalle por actividad.', Icons.grading_outlined, '/notas', 'Fase 3'),
+    _Acceso('Horario', 'Clases de la semana con salón y edificio.', Icons.calendar_month_outlined, '/horario', 'Fase 4'),
+    _Acceso('Asignaturas', 'Inscritas, docente y evaluación docente.', Icons.menu_book_outlined, '/asignaturas', 'Fase 4'),
+    _Acceso('Campus', 'Edificios, pisos y salones de la sede.', Icons.apartment_outlined, '/campus', 'Fase 4'),
     _Acceso('Reservas', 'Cabinas y salas de autorecreación por hora.', Icons.event_seat_outlined, '/reservas', 'Nueva'),
     _Acceso('Perfil', 'Datos de la cuenta, roles y cambio de contraseña.', Icons.person_outline, '/perfil', 'Fase 1'),
   ];

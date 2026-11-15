@@ -137,10 +137,26 @@ Las reglas se despliegan con `npm run rules:deploy` (usa la cuenta de servicio y
 Firebase Rules, D-65); `firebase deploy --only firestore:rules --config infra/firebase/firebase.json`
 sigue siendo válido.
 
+## Horarios, módulo académico y evaluación docente (Fase 4)
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `GET /api/v1/mi-horario` | estudiante o docente | Bloques de la semana con asignatura, grupo, docente y ubicación del salón (edificio, piso, sede) |
+| `GET /api/v1/mis-asignaturas` | estudiante o docente | Inscritas con créditos, docente, aula y si ya fue evaluada; para el docente, sus grupos |
+| `GET /api/v1/espacios/edificios` · `…/edificios/{id}/pisos` · `…/pisos/{id}/salones` | autenticado | Jerarquía Edificio → Piso → Salón del campus Calle 80 (§4.3) |
+| `POST /api/v1/evaluaciones-docentes` | estudiante | Evaluación única por inscripción: cinco criterios en escala 1–5 y comentario opcional (D-70) |
+| `GET /api/v1/evaluaciones-docentes/resumen` | Admin Académico | Agregados por docente (promedios por criterio, D-49); no expone comentarios identificables |
+
+La evaluación docente vive en la migración `0007` (tabla `evaluacion_docente`, única por
+inscripción). En la app, **Mi horario**, **Mis asignaturas** (con evaluación docente y acceso del
+docente a calificar) y **Campus** consumen estos endpoints; el horario y las notas se guardan en
+Hive con vigencia de 12 h y se muestran sin conexión con un aviso (D-71).
+
 ## Pruebas
 
 ```bash
-npm run api:test     # vitest: health, auth, carnet, aulas, calificaciones, correos y transacciones
+npm run api:test     # vitest: health, auth, carnet, aulas, calificaciones, correos, horarios,
+                     # evaluación docente, espacios y transacciones
 npm run app:test     # flutter test: PhoneFrame, caché Hive, localización y verificador
 flutter analyze app  # sin errores (con Flutter 3.50 solo avisos de SDK, D-66)
 ```
@@ -174,6 +190,6 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 1 — Autenticación, roles y semilla | ✅ completada (2026-11-13) |
 | 2 — Carnet y QR offline | ✅ completada (2026-11-13) |
 | 3 — Aulas virtuales y calificaciones | ✅ completada (2026-11-14) |
-| 4 — Horarios y módulo académico | pendiente |
+| 4 — Horarios y módulo académico | ✅ completada (2026-11-14) |
 | 5 — Panel administrativo y auditoría | pendiente |
 | 6 — Cierre y demo pública | pendiente |

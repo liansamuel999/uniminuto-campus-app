@@ -29,6 +29,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | J. Claves institucionales | D-60 | 0B |
 | K. Semilla y demo | D-61 – D-62 | 1 |
 | L. Foros, comunicación y reglas (Fase 3) | D-65 – D-69 | 3 |
+| M. Módulo académico y evaluación docente (Fase 4) | D-70 – D-71 | 4 |
 
 ---
 
@@ -170,6 +171,15 @@ el alcance ni los contratos fijados en el documento fuente.
 | D-67 | Los hilos y mensajes de foro guardan **`aula_id`** además del `foro_id` (= `actividad_id`, D-47). Las reglas validan la membresía de lectura/escritura contra `aulas_index/{aula_id}.miembros` con ese campo; al crear un mensaje comprueban además que `aula_id` coincide con el hilo padre. La semilla escribe el espejo `aulas_index` con el Admin SDK. | Guardar solo `foro_id` y resolver el aula con un `get()` adicional del documento padre en cada lectura. |
 | D-68 | `PUT /calificaciones` deja una notificación en `notificaciones/{uid}/items` (Firestore) **después** de confirmar la transacción SQL. Es *best-effort*: si Firebase no está disponible, la calificación ya registrada no falla y solo se pierde el aviso. | Escribir la notificación dentro de la transacción (Firestore no participa en ella) o dejar al estudiante sin aviso de nota. |
 | D-69 | Se añade **`GET /cuestionarios/{id}/intentos`** (docente dueño del grupo) porque §6.4 pide revisar los intentos y §7.7 no listaba el endpoint, con el mismo criterio que D-49. Devuelve estudiante, puntaje, fecha y respuestas del intento único. | No exponer los intentos y limitar al docente al puntaje agregado de la nota. |
+
+---
+
+## M. Módulo académico y evaluación docente (Fase 4)
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-70 | La evaluación docente usa **cinco criterios** fijos: `dominio`, `claridad`, `metodologia`, `evaluacion` y `acompanamiento`, cada uno entero de 1 a 5; la API exige los cinco y un comentario opcional de hasta 1000 caracteres. Es **única por inscripción** (`UNIQUE (inscripcion_id)`, §4.2) y el docente se toma del grupo de la inscripción, no del cuerpo de la petición. `GET /evaluaciones-docentes/resumen` solo lo ve el Admin Académico y devuelve promedios por criterio sin comentarios identificables (D-49). | Permitir criterios libres o evaluar por profesor sin asignatura; exponer comentarios en los agregados. |
+| D-71 | La **caché offline de lectura** de la Fase 4 usa las cajas Hive `horario` y `notas` (D-40) con vigencia de **12 h**: al guardar una respuesta se escribe el JSON con marca de tiempo; si la petición falla por red se muestra el dato guardado con el aviso «sin conexión» y, si no hay caché vigente, se muestra el error. La escritura (entregas, evaluación docente) no se hace offline. | Guardar indefinidamente (datos viejos) o no cachear (incumple el criterio «el horario se ve sin conexión»). |
 
 ---
 

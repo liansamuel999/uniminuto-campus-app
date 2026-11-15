@@ -5,6 +5,21 @@ import { cerrarPool, crearPool, verificarBaseDeDatos } from './db/pool.js';
 import { crearClienteS3, verificarBucket } from './lib/s3.js';
 import { registrarRutasSalud, type ChequeosSalud } from './modules/health/routes.js';
 import { crearRepositorioPerfil, registrarRutasPerfil, type RepositorioPerfil } from './modules/academico/perfil.js';
+import {
+  crearRepositorioHorarios,
+  registrarRutasHorarios,
+  type RepositorioHorarios,
+} from './modules/academico/horarios.js';
+import {
+  crearRepositorioEvaluaciones,
+  registrarRutasEvaluaciones,
+  type RepositorioEvaluaciones,
+} from './modules/academico/evaluaciones.js';
+import {
+  crearRepositorioEspacios,
+  registrarRutasEspacios,
+  type RepositorioEspacios,
+} from './modules/espacios/espacios.js';
 import { crearRepositorioCarnet, type RepositorioCarnet } from './modules/carnet/carnet.js';
 import { registrarRutasCarnet } from './modules/carnet/routes.js';
 import {
@@ -52,6 +67,10 @@ export interface OpcionesApp {
   repositorioArchivos?: RepositorioArchivos;
   repositorioCorreos?: RepositorioCorreos;
   repositorioCalificaciones?: RepositorioCalificaciones;
+  /** Permite inyectar horarios, evaluaciones y espacios (pruebas). */
+  repositorioHorarios?: RepositorioHorarios;
+  repositorioEvaluaciones?: RepositorioEvaluaciones;
+  repositorioEspacios?: RepositorioEspacios;
   logger?: boolean;
 }
 
@@ -138,6 +157,12 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   };
   registrarRutasSalud(app, chequeos);
   registrarRutasPerfil(app, opciones.repositorioPerfil ?? crearRepositorioPerfil(pool));
+  registrarRutasHorarios(app, opciones.repositorioHorarios ?? crearRepositorioHorarios(pool));
+  registrarRutasEvaluaciones(
+    app,
+    opciones.repositorioEvaluaciones ?? crearRepositorioEvaluaciones(pool),
+  );
+  registrarRutasEspacios(app, opciones.repositorioEspacios ?? crearRepositorioEspacios(pool));
 
   // Carnet: si no hay clave institucional configurada, las rutas se omiten (Fase 0/1) y se avisa.
   let repositorioCarnet = opciones.repositorioCarnet;

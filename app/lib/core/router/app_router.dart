@@ -11,6 +11,9 @@ import '../../features/validador/presentation/validador_page.dart';
 import '../../features/reservaciones/presentation/reservas_page.dart';
 import '../../features/aulas/presentation/aulas_page.dart';
 import '../../features/aulas/presentation/bandeja_page.dart';
+import '../../features/academico/presentation/asignaturas_page.dart';
+import '../../features/campus/presentation/campus_page.dart';
+import '../../features/horarios/presentation/horario_page.dart';
 import '../../features/academico/presentation/notas_page.dart';
 import '../session/session_controller.dart';
 import 'app_shell.dart';
@@ -46,6 +49,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/aulas', name: 'aulas', builder: (context, estado) => const AulasPage()),
           GoRoute(path: '/correos', name: 'correos', builder: (context, estado) => const BandejaPage()),
           GoRoute(path: '/notas', name: 'notas', builder: (context, estado) => const NotasPage()),
+          GoRoute(path: '/horario', name: 'horario', builder: (context, estado) => const HorarioPage()),
+          GoRoute(
+            path: '/asignaturas',
+            name: 'asignaturas',
+            builder: (context, estado) => const AsignaturasPage(),
+          ),
+          GoRoute(path: '/campus', name: 'campus', builder: (context, estado) => const CampusPage()),
           GoRoute(
             path: '/validador',
             name: 'validador',

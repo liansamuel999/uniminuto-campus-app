@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../features/academico/data/repositorio_academico.dart';
 import '../../../features/aulas/data/comunicacion_repository.dart';
 import '../../../features/auth/data/auth_repository.dart';
 import '../api/api_client.dart';
@@ -12,6 +13,11 @@ final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instan
 /// Foros y anuncios en Firestore (Fase 3, D-47 y D-48).
 final comunicacionRepositoryProvider = Provider<RepositorioComunicacion>(
   (ref) => RepositorioComunicacion(),
+);
+
+/// Lecturas académicas con caché offline (Fase 4, D-40).
+final repositorioAcademicoProvider = Provider<RepositorioAcademico>(
+  (ref) => RepositorioAcademico(ref.watch(apiClientProvider)),
 );
 
 /// Cliente de la API con el ID Token adjunto en cada petición (§3.2).
