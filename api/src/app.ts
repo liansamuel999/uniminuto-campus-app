@@ -23,6 +23,8 @@ import { crearRepositorioAulas, registrarRutasAulas, type RepositorioAulas } fro
 import { crearRepositorioEntregas, registrarRutasEntregas, type RepositorioEntregas } from './modules/actividades/entregas.js';
 import { crearRepositorioCuestionarios, registrarRutasCuestionarios, type RepositorioCuestionarios } from './modules/actividades/cuestionarios.js';
 import { crearRepositorioArchivos, registrarRutasArchivos, type RepositorioArchivos } from './modules/archivos/archivos.js';
+import { crearRepositorioCorreos, registrarRutasCorreos, type RepositorioCorreos } from './modules/comunicacion/correos.js';
+import { crearRepositorioCalificaciones, registrarRutasCalificaciones, type RepositorioCalificaciones } from './modules/calificaciones/calificaciones.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
@@ -48,6 +50,8 @@ export interface OpcionesApp {
   /** Permite inyectar cuestionarios y archivos (pruebas). */
   repositorioCuestionarios?: RepositorioCuestionarios;
   repositorioArchivos?: RepositorioArchivos;
+  repositorioCorreos?: RepositorioCorreos;
+  repositorioCalificaciones?: RepositorioCalificaciones;
   logger?: boolean;
 }
 
@@ -161,6 +165,11 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   registrarRutasCuestionarios(
     app,
     opciones.repositorioCuestionarios ?? crearRepositorioCuestionarios(pool),
+  );
+  registrarRutasCorreos(app, opciones.repositorioCorreos ?? crearRepositorioCorreos(pool));
+  registrarRutasCalificaciones(
+    app,
+    opciones.repositorioCalificaciones ?? crearRepositorioCalificaciones(pool),
   );
   if (clienteS3) {
     registrarRutasArchivos(app, opciones.repositorioArchivos ?? crearRepositorioArchivos(pool), clienteS3, env);

@@ -28,6 +28,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | I. Credenciales locales | D-59 | 0 |
 | J. Claves institucionales | D-60 | 0B |
 | K. Semilla y demo | D-61 – D-62 | 1 |
+| L. Foros, comunicación y reglas (Fase 3) | D-65 – D-69 | 3 |
 
 ---
 
@@ -157,6 +158,18 @@ el alcance ni los contratos fijados en el documento fuente.
 |---|---|---|
 | D-61 | El script de semilla vive en **`api/scripts/seed/`** (no en `infra/scripts/`) porque necesita las mismas dependencias de la API (`pg`, `firebase-admin`, `zod`, configuración de entorno) y las reglas de idempotencia del dominio. Se ejecuta con `npm run db:seed` desde la raíz, es idempotente por clave natural (correo, código, salón) y, si no hay cuenta de servicio, siembra la base con uids locales `demo-local-<código>` y avisa. | Duplicar `package.json`/`node_modules` en `infra/` solo para el script, o mover dependencias de la API a la raíz. |
 | D-62 | El login precarga las credenciales de demostración y muestra un recordatorio de las cuentas de prueba **solo cuando `ENTORNO=dev`** (`AppConfig.esProduccion == false`). En producción el formulario arranca vacío. | Credenciales visibles siempre (riesgo de confusión en la demo pública). |
+
+---
+
+## L. Foros, comunicación y reglas (Fase 3)
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-65 | Las reglas de Firestore se despliegan también con **`npm run rules:deploy`** (`api/scripts/deploy-firestore-rules.mjs`): usa la cuenta de servicio de Firebase y la API REST de Firebase Rules, de modo que se pueden publicar desde una PC sin `firebase-tools` ni `firebase login` interactivo. `firebase deploy --only firestore:rules` sigue siendo válido y ambos caminos publican el mismo archivo `infra/firebase/firestore.rules`. | Instalar `firebase-tools` y exigir un login interactivo en cada equipo (la PC de la demo no lo tenía). |
+| D-66 | La PC de la demo quedó con **Flutter 3.50.0 / Dart 3.14.0** frente a la versión fijada del proyecto (3.41.9 / Dart 3.11.5). No se migra a `package:material_ui` ni se baja el SDK: el código es el mismo y `flutter analyze` solo muestra los avisos `deprecated_member_use` del SDK al importar `package:flutter/material.dart`. Con Flutter 3.41.9 el análisis queda sin avisos. | Migrar los 33 archivos a `material_ui` (rompe la versión fijada y el APK) o degradar el SDK de toda la máquina. |
+| D-67 | Los hilos y mensajes de foro guardan **`aula_id`** además del `foro_id` (= `actividad_id`, D-47). Las reglas validan la membresía de lectura/escritura contra `aulas_index/{aula_id}.miembros` con ese campo; al crear un mensaje comprueban además que `aula_id` coincide con el hilo padre. La semilla escribe el espejo `aulas_index` con el Admin SDK. | Guardar solo `foro_id` y resolver el aula con un `get()` adicional del documento padre en cada lectura. |
+| D-68 | `PUT /calificaciones` deja una notificación en `notificaciones/{uid}/items` (Firestore) **después** de confirmar la transacción SQL. Es *best-effort*: si Firebase no está disponible, la calificación ya registrada no falla y solo se pierde el aviso. | Escribir la notificación dentro de la transacción (Firestore no participa en ella) o dejar al estudiante sin aviso de nota. |
+| D-69 | Se añade **`GET /cuestionarios/{id}/intentos`** (docente dueño del grupo) porque §6.4 pide revisar los intentos y §7.7 no listaba el endpoint, con el mismo criterio que D-49. Devuelve estudiante, puntaje, fecha y respuestas del intento único. | No exponer los intentos y limitar al docente al puntaje agregado de la nota. |
 
 ---
 

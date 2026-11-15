@@ -20,6 +20,8 @@ export interface EntregaListada {
   creadaEnCliente: string;
   recibidaEnServidor: string;
   estado: string;
+  inscripcionId: string;
+  nota: number | null;
 }
 
 export interface RepositorioEntregas {
@@ -148,10 +150,16 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         creada_en_cliente: string | Date;
         recibida_en_servidor: string | Date;
         estado: string;
+        inscripcion_id: string;
+        nota: string | null;
       }>(
         `SELECT e.id, u.nombres || ' ' || u.apellidos AS estudiante, e.texto,
-                e.creada_en_cliente, e.recibida_en_servidor, e.estado
-         FROM entrega e JOIN usuario u ON u.id = e.estudiante_id
+                e.creada_en_cliente, e.recibida_en_servidor, e.estado,
+                i.id AS inscripcion_id, c.nota
+         FROM entrega e
+         JOIN usuario u ON u.id = e.estudiante_id
+         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id
+         LEFT JOIN calificacion c ON c.actividad_id = e.actividad_id AND c.inscripcion_id = i.id
          WHERE e.actividad_id = $1 ORDER BY e.recibida_en_servidor DESC`,
         [actividadId],
       );
@@ -164,6 +172,8 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         creadaEnCliente: iso(fila.creada_en_cliente),
         recibidaEnServidor: iso(fila.recibida_en_servidor),
         estado: fila.estado,
+        inscripcionId: fila.inscripcion_id,
+        nota: fila.nota === null ? null : Number(fila.nota),
       }));
     },
   };

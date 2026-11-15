@@ -13,6 +13,14 @@ export interface PreguntaParaEstudiante {
   opciones: Array<{ id: string; texto: string }>;
 }
 
+/** Intento visto por el docente dueño del grupo (§6.4 paso 4). */
+export interface IntentoListado {
+  estudiante: string;
+  puntaje: number;
+  enviadoEn: string;
+  respuestas: Record<string, string[]>;
+}
+
 export interface CuestionarioEstudiante {
   actividadId: string;
   titulo: string;
@@ -29,6 +37,7 @@ export interface RepositorioCuestionarios {
     actividadId: string,
     respuestas: Record<string, string[]>,
   ): Promise<{ puntaje: number; correctas: number; total: number }>;
+  listarIntentos(uidDocente: string, actividadId: string): Promise<IntentoListado[]>;
 }
 
 export function crearRepositorioCuestionarios(pool: Pool): RepositorioCuestionarios {
@@ -153,6 +162,46 @@ export function crearRepositorioCuestionarios(pool: Pool): RepositorioCuestionar
         return resultado;
       });
     },
+
+    async listarIntentos(uidDocente, actividadId) {
+      const acceso = await pool.query<{ id: string }>(
+        `SELECT a.id FROM actividad a
+         JOIN unidad un ON un.id = a.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
+         JOIN usuario u ON u.id = g.docente_id
+         WHERE a.id = $1 AND u.uid_firebase = $2 AND a.tipo = 'CUESTIONARIO'`,
+        [actividadId, uidDocente],
+      );
+      if (!acceso.rows[0]) {
+        throw errores.noEncontrado('El cuestionario no existe o no es de tus grupos');
+      }
+
+      const intentos = await pool.query<{
+        estudiante: string;
+        puntaje: string;
+        enviado_en: string | Date;
+        respuestas: unknown;
+      }>(
+        `SELECT u.nombres || ' ' || u.apellidos AS estudiante, i.puntaje, i.enviado_en, i.respuestas
+         FROM intento_cuestionario i JOIN usuario u ON u.id = i.estudiante_id
+         WHERE i.actividad_id = $1 ORDER BY i.enviado_en`,
+        [actividadId],
+      );
+
+      return intentos.rows.map((fila) => ({
+        estudiante: fila.estudiante,
+        puntaje: Number(fila.puntaje),
+        enviadoEn: (fila.enviado_en instanceof Date
+          ? fila.enviado_en
+          : new Date(fila.enviado_en)
+        ).toISOString(),
+        respuestas:
+          fila.respuestas && typeof fila.respuestas === 'object'
+            ? (fila.respuestas as Record<string, string[]>)
+            : {},
+      }));
+    },
   };
 }
 
@@ -173,5 +222,11 @@ export function registrarRutasCuestionarios(app: FastifyInstance, repo: Reposito
     const { respuestas } = esquemaRespuestas.parse(peticion.body ?? {});
     const resultado = await repo.responder(peticion.actor!.uid, id, respuestas);
     return respuesta.code(201).send(resultado);
+  });
+
+  // Revisión de intentos por el docente dueño del grupo (§6.4 paso 4).
+  app.get('/api/v1/cuestionarios/:id/intentos', { preHandler: app.autenticar }, async (peticion) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(peticion.params);
+    return repo.listarIntentos(peticion.actor!.uid, id);
   });
 }

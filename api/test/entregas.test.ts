@@ -26,6 +26,8 @@ function repoFalso(): RepositorioEntregas {
           creadaEnCliente: new Date().toISOString(),
           recibidaEnServidor: new Date().toISOString(),
           estado: 'ENVIADA',
+          inscripcionId: '5c1e2b4a-7777-4c2b-9d3e-000000000007',
+          nota: null,
         },
       ];
     },

@@ -1,12 +1,18 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../features/aulas/data/comunicacion_repository.dart';
 import '../../../features/auth/data/auth_repository.dart';
 import '../api/api_client.dart';
 import '../config/app_config.dart';
 
 /// Instancia única de Firebase Authentication.
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
+
+/// Foros y anuncios en Firestore (Fase 3, D-47 y D-48).
+final comunicacionRepositoryProvider = Provider<RepositorioComunicacion>(
+  (ref) => RepositorioComunicacion(),
+);
 
 /// Cliente de la API con el ID Token adjunto en cada petición (§3.2).
 final apiClientProvider = Provider<ApiClient>((ref) {

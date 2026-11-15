@@ -1,15 +1,19 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reglas de Firestore v1 — Uniminuto Campus App (§4.4, §5 y D-57).
+// Reglas de Firestore v2 — Uniminuto Campus App (§4.4, §5, D-47, D-57 y D-65).
 //
 // Colecciones y quién escribe:
 //   aulas_index/{aulaId}                        solo la API (Admin SDK) — espejo para estas reglas
-//   foros/{aulaId}/hilos/{hiloId}               miembros del aula
-//   foros/{aulaId}/hilos/{hiloId}/mensajes/*    miembros del aula
+//   foros/{foroId}/hilos/{hiloId}               miembros del aula dueña del foro
+//   foros/{foroId}/hilos/{hiloId}/mensajes/*    miembros del aula dueña del foro
 //   anuncios/{aulaId}/items/{id}                docentes del aula
 //   notificaciones/{uid}/items/{id}             la API (el dueño solo marca `leida`)
 //   colas_entregas/{uid}/items/{entregaId}      el dueño
+//
+// `foroId` = `actividad_id` (D-47): cada actividad tipo FORO tiene su hilo. Como el id del foro
+// no es el del aula, los documentos llevan `aula_id` y las reglas comprueban la membresía con ese
+// campo contra `aulas_index/{aula_id}` (la API mantiene el espejo desde la Fase 3).
 //
 // `aulas_index` guarda `miembros: [uid]` y `docentes: [uid]`; se mantiene desde la API porque el
 // cliente no puede leer la base SQL donde viven inscripciones y docentes.
@@ -24,12 +28,14 @@ service cloud.firestore {
 
     function esMiembro(aulaId) {
       return autenticado()
+        && aulaId is string
         && exists(/databases/$(database)/documents/aulas_index/$(aulaId))
         && request.auth.uid in get(/databases/$(database)/documents/aulas_index/$(aulaId)).data.miembros;
     }
 
     function esDocente(aulaId) {
       return autenticado()
+        && aulaId is string
         && exists(/databases/$(database)/documents/aulas_index/$(aulaId))
         && request.auth.uid in get(/databases/$(database)/documents/aulas_index/$(aulaId)).data.docentes;
     }
@@ -41,26 +47,29 @@ service cloud.firestore {
     }
 
     // ── Foros: un foro por actividad (foroId = actividad_id, D-47) ──────────
-    match /foros/{aulaId}/hilos/{hiloId} {
-      allow read: if esMiembro(aulaId);
-      allow create: if esMiembro(aulaId)
+    match /foros/{foroId}/hilos/{hiloId} {
+      allow read: if esMiembro(resource.data.aula_id);
+      allow create: if esMiembro(request.resource.data.aula_id)
         && request.resource.data.autor_uid == request.auth.uid
-        && request.resource.data.aula_id == aulaId;
-      allow update, delete: if esMiembro(aulaId)
-        && (resource.data.autor_uid == request.auth.uid || esDocente(aulaId));
+        && request.resource.data.foro_id == foroId;
+      allow update, delete: if esMiembro(resource.data.aula_id)
+        && (resource.data.autor_uid == request.auth.uid || esDocente(resource.data.aula_id));
 
       match /mensajes/{mensajeId} {
-        allow read: if esMiembro(aulaId);
-        allow create: if esMiembro(aulaId)
-          && request.resource.data.autor_uid == request.auth.uid;
-        allow update, delete: if esMiembro(aulaId)
-          && (resource.data.autor_uid == request.auth.uid || esDocente(aulaId));
+        allow read: if esMiembro(resource.data.aula_id);
+        allow create: if esMiembro(request.resource.data.aula_id)
+          && request.resource.data.autor_uid == request.auth.uid
+          // El mensaje no puede cambiar de aula respecto al hilo que lo contiene.
+          && request.resource.data.aula_id
+            == get(/databases/$(database)/documents/foros/$(foroId)/hilos/$(hiloId)).data.aula_id;
+        allow update, delete: if esMiembro(resource.data.aula_id)
+          && (resource.data.autor_uid == request.auth.uid || esDocente(resource.data.aula_id));
       }
     }
 
     // ── Anuncios: leen los miembros, escriben los docentes del aula ─────────
     match /anuncios/{aulaId}/items/{anuncioId} {
-      allow read: if esMiembro(aulaId);
+      allow read: if esMiembro(aulaId) || esDocente(aulaId);
       allow create, update: if esDocente(aulaId)
         && request.resource.data.autor_uid == request.auth.uid;
       allow delete: if esDocente(aulaId);

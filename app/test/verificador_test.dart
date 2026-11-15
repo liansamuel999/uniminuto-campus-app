@@ -27,7 +27,7 @@ const String kid = 'inst-test';
 
 Future<String> firmarAsync(ParEs256 par, Map<String, dynamic> payload, {String? kidCabecera}) {
   return firmarJws(
-    cabecera: {'alg': 'ES256', 'typ': 'JWT', if (kidCabecera != null) 'kid': kidCabecera},
+    cabecera: {'alg': 'ES256', 'typ': 'JWT', 'kid': ?kidCabecera},
     payload: payload,
     firmarBytes: (bytes) async => firmarEs256ConPrivada(par.d, bytes),
   );

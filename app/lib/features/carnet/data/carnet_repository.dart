@@ -27,7 +27,7 @@ class CarnetRepository {
     final crudo = _cache.get(_claveResumen);
     if (crudo is! Map) return null;
     try {
-      return ResumenCarnet.fromJson(Map<String, dynamic>.from(crudo as Map));
+      return ResumenCarnet.fromJson(Map<String, dynamic>.from(crudo));
     } catch (_) {
       return null;
     }

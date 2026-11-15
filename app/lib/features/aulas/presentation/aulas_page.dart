@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
+import '../../../core/session/session_controller.dart';
 import 'tarea_page.dart';
 import 'cuestionario_page.dart';
+import 'foro_page.dart';
+import 'anuncios_page.dart';
+import 'calificar_page.dart';
 
 /// Lista de aulas virtuales del usuario (estudiante, docente o admin académico).
 class AulasPage extends ConsumerStatefulWidget {
@@ -128,9 +132,34 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
   @override
   Widget build(BuildContext context) {
     final unidades = (_detalle?['unidades'] as List<dynamic>? ?? const []);
+    final roles = ref.watch(sesionProvider).valueOrNull?.roles ?? const <String>[];
+    final esDocente = roles.contains('DOCENTE') || roles.contains('ADMIN_ACADEMICO');
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.titulo)),
+      appBar: AppBar(
+        title: Text(widget.titulo),
+        actions: [
+          IconButton(
+            tooltip: 'Anuncios del aula',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AnunciosPage(aulaId: widget.aulaId, puedePublicar: esDocente),
+              ),
+            ),
+            icon: const Icon(Icons.campaign_outlined),
+          ),
+          if (esDocente)
+            IconButton(
+              tooltip: 'Calificar entregas y revisar intentos',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => CalificarPage(aulaId: widget.aulaId),
+                ),
+              ),
+              icon: const Icon(Icons.grading_outlined),
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -164,7 +193,9 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
                         '${actividad['tipo']} · ${actividad['peso']}% del corte ${actividad['corte']}'
                         '${actividad['cierraEn'] != null ? ' · cierra ${_fecha(actividad['cierraEn'])}' : ''}',
                       ),
-                      trailing: actividad['tipo'] == 'TAREA' || actividad['tipo'] == 'CUESTIONARIO'
+                      trailing: actividad['tipo'] == 'TAREA' ||
+                              actividad['tipo'] == 'CUESTIONARIO' ||
+                              actividad['tipo'] == 'FORO'
                           ? const Icon(Icons.chevron_right)
                           : null,
                       onTap: actividad['tipo'] == 'TAREA'
@@ -184,7 +215,17 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
                                       ),
                                     ),
                                   )
-                              : null,
+                              : actividad['tipo'] == 'FORO'
+                                  ? () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => ForoPage(
+                                            foroId: '${actividad['id']}',
+                                            aulaId: widget.aulaId,
+                                            titulo: '${actividad['titulo']}',
+                                          ),
+                                        ),
+                                      )
+                                  : null,
                     ),
                 ],
               ),

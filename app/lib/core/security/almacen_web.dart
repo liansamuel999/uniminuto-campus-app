@@ -149,7 +149,7 @@ class AlmacenClavesWeb implements AlmacenClavesDispositivo {
       final privada = await _leerPrivada();
       final publicaTexto = web.window.localStorage.getItem(_clavePublicaLocal);
       if (privada == null || publicaTexto == null) return null;
-      return _aClave(privada, jsonDecode(publicaTexto) as Map<String, dynamic>);
+      return await _aClave(privada, jsonDecode(publicaTexto) as Map<String, dynamic>);
     } catch (_) {
       persistente = false;
       if (_privadaEnMemoria != null && _publicaEnMemoria != null) {

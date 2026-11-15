@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import type { PoolClient } from 'pg';
 
 import { cargarEnv } from '../../src/config/env.js';
@@ -50,6 +51,7 @@ const uidLocal = (codigo: string) => `demo-local-${codigo}`;
 /** Fila del catálogo de usuarios ya resuelta con su uid de Firebase. */
 interface UsuarioSembrado {
   id: string;
+  uid: string;
   correo: string;
   rol: string;
   docente: boolean;
@@ -220,7 +222,7 @@ async function sembrarEspaciosReservables(cliente: PoolClient): Promise<void> {
 /** Aula virtual con 3 cortes, 2 unidades, contenidos, actividades y una nota de ejemplo. */
 async function sembrarAulaVirtual(
   cliente: PoolClient,
-  datos: { grupoId: string; nombre: string; estudiantes: UsuarioSembrado[] },
+  datos: { grupoId: string; nombre: string; docenteUid?: string; estudiantes: UsuarioSembrado[] },
 ): Promise<void> {
   const cortes: Record<number, string> = {};
   for (const [numero, peso] of [[1, 30], [2, 30], [3, 40]] as const) {
@@ -240,6 +242,16 @@ async function sembrarAulaVirtual(
     [datos.grupoId, datos.nombre],
   );
   const aulaId = aula.rows[0]!.id;
+
+  // Espejo para las reglas de Firestore: solo la API (Admin SDK) escribe aulas_index.
+  if (getApps().length > 0) {
+    await getFirestore()
+      .doc(`aulas_index/${aulaId}`)
+      .set({
+        miembros: datos.estudiantes.map((estudiante) => estudiante.uid),
+        docentes: datos.docenteUid ? [datos.docenteUid] : [],
+      }, { merge: true });
+  }
 
   const unidades = [
     { numero: 1, titulo: 'Fundamentos y entorno de trabajo' },
@@ -361,6 +373,7 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       const id = await upsertUsuario(cliente, usuario, uid, programaId);
       usuariosSembrados.push({
         id,
+        uid,
         correo: usuario.correo,
         rol: usuario.rol,
         docente: usuario.docente === true,
@@ -391,6 +404,7 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       await sembrarAulaVirtual(cliente, {
         grupoId,
         nombre: `${asignatura.nombre} · Grupo 01`,
+        docenteUid: usuariosSembrados.find((usuario) => usuario.correo === asignatura.docente)?.uid,
         estudiantes: usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE'),
       });
 

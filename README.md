@@ -25,6 +25,12 @@ Decisiones no cubiertas por el documento: [`docs/DECISIONES.md`](docs/DECISIONES
   `api/config/firebase-service-account.json` (carpeta ignorada por git)
 - CockroachDB Cloud (demo) **o** el CockroachDB local de `docker-compose` (desarrollo sin nube)
 
+> **Entorno verificado el 2026-11-14.** La PC de la demo compila la app y pasa las pruebas con
+> **Node 20.20.2** y **Flutter 3.50.0 / Dart 3.14.0**. El repositorio sigue fijado a Node 22
+> (`.nvmrc`) y Flutter 3.41.9; con Flutter 3.50 `flutter analyze` solo añade los avisos
+> `deprecated_member_use` del SDK al importar `package:flutter/material.dart`, sin errores de
+> código (ver D-66 en [`docs/DECISIONES.md`](docs/DECISIONES.md)).
+
 ## Configuración de la API (`api/.env`)
 
 Copiar `api/.env.example` a `api/.env` y ajustar:
@@ -106,12 +112,37 @@ La semilla crea esos usuarios en Firebase Authentication y fija sus *custom clai
 La clave privada institucional nunca sale del backend; la app del validador solo lleva la pública
 (`app/assets/keys/institution_jwks.json`).
 
+## Aulas virtuales, calificaciones y comunicación (Fase 3)
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `GET /api/v1/aulas` · `GET /api/v1/aulas/{id}` | miembros o admin | Aulas, unidades, contenidos y actividades (tarea, cuestionario, foro) |
+| `GET /api/v1/mis-notas` | estudiante | Notas por corte y actividad con pesos y definitiva |
+| `POST /api/v1/entregas` | estudiante | Entrega idempotente por UUID de cliente (ENVIADA/TARDIA con gracia de 24 h) |
+| `GET /api/v1/actividades/{id}/entregas` | docente del grupo | Entregas con estudiante, texto, estado, inscripción y nota |
+| `GET /api/v1/cuestionarios/{id}` · `POST /api/v1/cuestionarios/{id}/intentos` | estudiante | Preguntas sin respuesta correcta e intento único autocalificado |
+| `GET /api/v1/cuestionarios/{id}/intentos` | docente del grupo | Revisión de intentos (puntaje y respuestas, D-69) |
+| `POST /api/v1/archivos/subida` · `GET /api/v1/archivos/{id}/url` | autenticado | URL prefirmada PUT/GET del datalake (10/15 min, máximo 50 MB) |
+| `PUT /api/v1/calificaciones` | docente del grupo | Califica en una transacción: upsert, nota del corte, auditoría y aviso (D-68) |
+| `GET /api/v1/aulas/{id}/calificaciones` | docente del grupo | Matriz estudiante × actividad para calificar |
+| `POST /api/v1/anuncios/{id}/replicar-correo` | docente del aula | Correo simulado por estudiante (idempotente por anuncio, D-48) |
+| `GET /api/v1/correos-simulados` | autenticado | Bandeja simulada propia |
+
+Foros y anuncios viven en **Cloud Firestore** (D-47, D-48): cada actividad tipo `FORO` tiene su
+foro (`foros/{actividadId}/hilos`), los anuncios en `anuncios/{aulaId}/items` y la app los escucha
+en tiempo real. La semilla escribe el espejo `aulas_index/{aulaId}` (`miembros` y `docentes`) con
+el Admin SDK, que es lo que leen las reglas de seguridad.
+
+Las reglas se despliegan con `npm run rules:deploy` (usa la cuenta de servicio y la API REST de
+Firebase Rules, D-65); `firebase deploy --only firestore:rules --config infra/firebase/firebase.json`
+sigue siendo válido.
+
 ## Pruebas
 
 ```bash
-npm run api:test     # vitest: health, auth, credenciales y reintento de transacciones
-npm run app:test     # flutter test: PhoneFrame y caché Hive
-flutter analyze app  # sin errores
+npm run api:test     # vitest: health, auth, carnet, aulas, calificaciones, correos y transacciones
+npm run app:test     # flutter test: PhoneFrame, caché Hive, localización y verificador
+flutter analyze app  # sin errores (con Flutter 3.50 solo avisos de SDK, D-66)
 ```
 
 ## App Flutter
@@ -142,7 +173,7 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 0B — Claves ES256, esqueleto Flutter, reglas Firestore | ✅ completada (2026-11-12) |
 | 1 — Autenticación, roles y semilla | ✅ completada (2026-11-13) |
 | 2 — Carnet y QR offline | ✅ completada (2026-11-13) |
-| 3 — Aulas virtuales y calificaciones | pendiente |
+| 3 — Aulas virtuales y calificaciones | ✅ completada (2026-11-14) |
 | 4 — Horarios y módulo académico | pendiente |
 | 5 — Panel administrativo y auditoría | pendiente |
 | 6 — Cierre y demo pública | pendiente |
