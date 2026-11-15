@@ -30,9 +30,13 @@ App Flutter:
 ```bash
 cd app
 flutter pub get
-flutter run -d chrome --dart-define-from-file=env/dev.json   # Web con marco de teléfono
-flutter run --dart-define-from-file=env/dev.json             # Android/emulador
+flutter run -d chrome --web-port=5173 --dart-define-from-file=env/dev.json   # Web con marco de teléfono
+flutter run --dart-define-from-file=env/dev.json                             # Android/emulador
 ```
+
+> En Web usa siempre el mismo puerto (`--web-port=5173` o `npm run app:web`): la llave del
+> dispositivo se guarda por origen y, si el puerto cambia, el carnet pedirá volver a vincular el
+> navegador para mostrar el QR de ingreso.
 
 ## 2. Credenciales de demostración
 

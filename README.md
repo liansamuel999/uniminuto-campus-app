@@ -29,11 +29,12 @@ Pasos de publicación: [`docs/despliegue.md`](docs/despliegue.md).
   `api/config/firebase-service-account.json` (carpeta ignorada por git)
 - CockroachDB Cloud (demo) **o** el CockroachDB local de `docker-compose` (desarrollo sin nube)
 
-> **Entorno verificado el 2026-11-14.** La PC de la demo compila la app y pasa las pruebas con
-> **Node 20.20.2** y **Flutter 3.50.0 / Dart 3.14.0**. El repositorio sigue fijado a Node 22
-> (`.nvmrc`) y Flutter 3.41.9; con Flutter 3.50 `flutter analyze` solo añade los avisos
-> `deprecated_member_use` del SDK al importar `package:flutter/material.dart`, sin errores de
-> código (ver D-66 en [`docs/DECISIONES.md`](docs/DECISIONES.md)).
+> **Entorno de la PC de la demo (2026-11-15).** Se instalaron y fijaron las versiones del
+> proyecto: **Node 22.23.5** (nvm, alineado con `.nvmrc`), **Flutter 3.41.9 / Dart 3.11.5** (SDK
+> fijado; el 3.50 del sistema queda para el editor) y **JDK 21 Temurin** (`JAVA_HOME` y
+> `flutter config --jdk-dir`), que es lo que necesita Gradle 8.14. El plugin Kotlin del proyecto es
+> 2.4.20 y no se usa NDK. Con estas versiones `flutter analyze` queda sin errores ni avisos (D-66,
+> D-77).
 
 ## Configuración de la API (`api/.env`)
 
@@ -208,9 +209,13 @@ flutter analyze app  # sin errores (con Flutter 3.50 solo avisos de SDK, D-66)
 ```bash
 cd app
 flutter pub get
-flutter run -d chrome --dart-define-from-file=env/dev.json   # Web con marco de teléfono
-flutter run --dart-define-from-file=env/dev.json             # Android/emulador
+flutter run -d chrome --web-port=5173 --dart-define-from-file=env/dev.json   # Web con marco de teléfono
+flutter run --dart-define-from-file=env/dev.json                             # Android/emulador
 ```
+
+> Usa un **puerto fijo** en Web (`--web-port=5173`, o `npm run app:web`): la llave del dispositivo
+> del carnet se guarda por origen (IndexedDB/localStorage) y, si el puerto cambia en cada ejecución,
+> el navegador pierde la llave y el QR pide volver a vincular el dispositivo.
 
 `lib/core/config/firebase_options.dart` es un **archivo de ejemplo** hasta que la Fase 1 ejecute
 `flutterfire configure`; mientras tanto el login permite "Entrar en modo muestra" para recorrer el

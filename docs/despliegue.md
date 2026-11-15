@@ -88,9 +88,11 @@ En desarrollo se usa MinIO con las mismas variables (`npm run infra:minio`).
 
 ## 5. APK Android
 
-Requisito de toolchain: Android SDK y **JDK 17–21**. El `gradle-wrapper` del proyecto usa Gradle
-8.14, que no soporta Java 25; si el único JDK es el de Android Studio (25), configurar uno compatible
-una vez (en la PC de la demo quedó Temurin 21):
+Requisito de toolchain: Android SDK, **JDK 17–21** y el **SDK de Flutter fijado por el proyecto**
+(3.41.9). En la PC de la demo quedaron instalados Temurin 21 y Flutter 3.41.9 en local, porque el
+Flutter 3.50 del sistema exige Gradle 9.5/AGP 9 y el wrapper del proyecto es 8.14. El plugin Kotlin
+se fijó en **2.4.20** (las librerías de Firebase compilan con metadata 2.4) y `jvmTarget` usa el DSL
+`compilerOptions`.
 
 ```powershell
 flutter config --jdk-dir="C:\Users\lians\jdks\temurin21\jdk-21.0.13+9"
@@ -98,7 +100,8 @@ flutter config --jdk-dir="C:\Users\lians\jdks\temurin21\jdk-21.0.13+9"
 
 ```bash
 cd app
-flutter build apk --release --dart-define-from-file=env/prod.json
+# Con el SDK fijado del proyecto:
+C:\Users\lians\flutter-3.41.9\flutter\bin\flutter.bat build apk --release --dart-define-from-file=env/prod.json
 # Salida: build/app/outputs/flutter-apk/app-release.apk
 ```
 

@@ -190,7 +190,9 @@ class RepositorioAcademico {
 
   Future<Map<String, dynamic>?> miEntrega(String actividadId) async {
     try {
-      return await _api.getJson('/actividades/$actividadId/mi-entrega');
+      final datos = await _api.getJson('/actividades/$actividadId/mi-entrega');
+      // La API responde `null` cuando aún no hay entrega; un mapa vacío no cuenta como entrega.
+      return datos.isEmpty ? null : datos;
     } on ApiException catch (error) {
       if (error.estado == 404 || error.codigo == 'NO_ENCONTRADO') return null;
       rethrow;

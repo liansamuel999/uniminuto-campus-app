@@ -20,6 +20,7 @@
     "token:dev": "npm --prefix api run token:dev",
     "app:get": "cd app && flutter pub get",
     "app:run": "cd app && flutter run",
+    "app:web": "cd app && flutter run -d chrome --web-port=5173 --dart-define-from-file=env/dev.json",
     "app:analyze": "cd app && flutter analyze",
     "app:test": "cd app && flutter test",
     "test": "npm run api:test"
