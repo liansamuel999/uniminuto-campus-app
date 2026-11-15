@@ -12,6 +12,10 @@ import '../../features/reservaciones/presentation/reservas_page.dart';
 import '../../features/aulas/presentation/aulas_page.dart';
 import '../../features/aulas/presentation/bandeja_page.dart';
 import '../../features/academico/presentation/asignaturas_page.dart';
+import '../../features/admin/presentation/admin_academico_page.dart';
+import '../../features/admin/presentation/admin_espacios_page.dart';
+import '../../features/admin/presentation/auditoria_page.dart';
+import '../../features/admin/presentation/incidencias_page.dart';
 import '../../features/campus/presentation/campus_page.dart';
 import '../../features/horarios/presentation/horario_page.dart';
 import '../../features/academico/presentation/notas_page.dart';
@@ -56,6 +60,26 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, estado) => const AsignaturasPage(),
           ),
           GoRoute(path: '/campus', name: 'campus', builder: (context, estado) => const CampusPage()),
+          GoRoute(
+            path: '/admin-academico',
+            name: 'admin-academico',
+            builder: (context, estado) => const AdminAcademicoPage(),
+          ),
+          GoRoute(
+            path: '/admin-espacios',
+            name: 'admin-espacios',
+            builder: (context, estado) => const AdminEspaciosPage(),
+          ),
+          GoRoute(
+            path: '/incidencias',
+            name: 'incidencias',
+            builder: (context, estado) => const IncidenciasPage(),
+          ),
+          GoRoute(
+            path: '/auditoria',
+            name: 'auditoria',
+            builder: (context, estado) => const AuditoriaPage(),
+          ),
           GoRoute(
             path: '/validador',
             name: 'validador',

@@ -20,6 +20,26 @@ import {
   registrarRutasEspacios,
   type RepositorioEspacios,
 } from './modules/espacios/espacios.js';
+import {
+  crearRepositorioAdminAcademico,
+  registrarRutasAdminAcademico,
+  type RepositorioAdminAcademico,
+} from './modules/admin/admin_academico.js';
+import {
+  crearRepositorioAdminEspacios,
+  registrarRutasAdminEspacios,
+  type RepositorioAdminEspacios,
+} from './modules/admin/admin_espacios.js';
+import {
+  crearRepositorioIncidencias,
+  registrarRutasIncidencias,
+  type RepositorioIncidencias,
+} from './modules/incidencias/incidencias.js';
+import {
+  crearRepositorioAuditoria,
+  registrarRutasAuditoria,
+  type RepositorioAuditoria,
+} from './modules/auditoria/auditoria.js';
 import { crearRepositorioCarnet, type RepositorioCarnet } from './modules/carnet/carnet.js';
 import { registrarRutasCarnet } from './modules/carnet/routes.js';
 import {
@@ -71,6 +91,11 @@ export interface OpcionesApp {
   repositorioHorarios?: RepositorioHorarios;
   repositorioEvaluaciones?: RepositorioEvaluaciones;
   repositorioEspacios?: RepositorioEspacios;
+  /** Permite inyectar administración, incidencias y auditoría (pruebas). */
+  repositorioAdminAcademico?: RepositorioAdminAcademico;
+  repositorioAdminEspacios?: RepositorioAdminEspacios;
+  repositorioIncidencias?: RepositorioIncidencias;
+  repositorioAuditoria?: RepositorioAuditoria;
   logger?: boolean;
 }
 
@@ -163,6 +188,19 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     opciones.repositorioEvaluaciones ?? crearRepositorioEvaluaciones(pool),
   );
   registrarRutasEspacios(app, opciones.repositorioEspacios ?? crearRepositorioEspacios(pool));
+  registrarRutasAdminAcademico(
+    app,
+    opciones.repositorioAdminAcademico ?? crearRepositorioAdminAcademico(pool),
+  );
+  registrarRutasAdminEspacios(
+    app,
+    opciones.repositorioAdminEspacios ?? crearRepositorioAdminEspacios(pool),
+  );
+  registrarRutasIncidencias(
+    app,
+    opciones.repositorioIncidencias ?? crearRepositorioIncidencias(pool),
+  );
+  registrarRutasAuditoria(app, opciones.repositorioAuditoria ?? crearRepositorioAuditoria(pool));
 
   // Carnet: si no hay clave institucional configurada, las rutas se omiten (Fase 0/1) y se avisa.
   let repositorioCarnet = opciones.repositorioCarnet;

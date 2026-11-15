@@ -19,7 +19,7 @@ class _Acceso {
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
-  static const List<_Acceso> _accesos = <_Acceso>[
+  static const List<_Acceso> _accesosBase = <_Acceso>[
     _Acceso('Carnet digital', 'QR dinámico, código de barras y dispositivo vinculado.', Icons.badge_outlined, '/carnet', 'Fase 2'),
     _Acceso('Aulas virtuales', 'Contenidos, tareas, foros y anuncios de tus asignaturas.', Icons.school_outlined, '/aulas', 'Fase 3'),
     _Acceso('Bandeja simulada', 'Correos replicados de los anuncios importantes.', Icons.mark_email_unread_outlined, '/correos', 'Fase 3'),
@@ -31,11 +31,46 @@ class HomePage extends ConsumerWidget {
     _Acceso('Perfil', 'Datos de la cuenta, roles y cambio de contraseña.', Icons.person_outline, '/perfil', 'Fase 1'),
   ];
 
+  /// Accesos por rol: los paneles administrativos solo aparecen para su rol (§5).
+  static List<_Acceso> _accesosPara(String? rol) {
+    final accesos = List<_Acceso>.from(_accesosBase);
+    if (rol == 'ADMIN_ACADEMICO') {
+      accesos.insert(
+        0,
+        const _Acceso('Administración académica', 'Periodos, asignaturas, grupos, inscripciones y docentes.', Icons.admin_panel_settings_outlined, '/admin-academico', 'Fase 5'),
+      );
+    }
+    if (rol == 'ADMIN_ESPACIOS') {
+      accesos.insert(
+        0,
+        const _Acceso('Espacios y horarios', 'Edificios, pisos, salones y asignación de horarios.', Icons.domain_outlined, '/admin-espacios', 'Fase 5'),
+      );
+    }
+    if (rol == 'AUDITOR') {
+      accesos.insert(
+        0,
+        const _Acceso('Auditoría', 'Bitácora de eventos de solo lectura con filtros.', Icons.shield_outlined, '/auditoria', 'Fase 5'),
+      );
+    }
+    if (rol == 'SOPORTE') {
+      accesos.insert(
+        0,
+        const _Acceso('Gestión de incidencias', 'Reportes de los usuarios: estado y resolución.', Icons.support_agent_outlined, '/incidencias', 'Fase 5'),
+      );
+    } else {
+      accesos.add(
+        const _Acceso('Incidencias', 'Reporta un problema al equipo de Soporte.', Icons.report_outlined, '/incidencias', 'Fase 5'),
+      );
+    }
+    return accesos;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sesion = ref.watch(sesionProvider).valueOrNull;
     final colores = Theme.of(context).colorScheme;
     final rol = sesion == null ? null : rolEfectivo(ref, sesion);
+    final accesos = _accesosPara(rol);
 
     return Scaffold(
       appBar: AppBar(
@@ -74,7 +109,7 @@ class HomePage extends ConsumerWidget {
             crossAxisSpacing: 12,
             childAspectRatio: 0.92,
             children: [
-              for (final acceso in _accesos)
+              for (final acceso in accesos)
                 _TarjetaAcceso(
                   acceso: acceso,
                   habilitado: acceso.ruta != null,

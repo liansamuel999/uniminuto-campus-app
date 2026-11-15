@@ -26,10 +26,18 @@ export interface SalonCampus {
   capacidad: number;
 }
 
+/** Salón con su ubicación plana, para selectores y tablas administrativas. */
+export interface SalonUbicado extends SalonCampus {
+  piso: number;
+  edificio: string;
+  edificioCodigo: string;
+}
+
 export interface RepositorioEspacios {
   edificios(): Promise<EdificioCampus[]>;
   pisos(edificioId: string): Promise<PisoCampus[] | null>;
   salones(pisoId: string): Promise<SalonCampus[] | null>;
+  salonesTodos(): Promise<SalonUbicado[]>;
 }
 
 /** Jerarquía Edificio → Piso → Salón del campus Calle 80 (§4.3). */
@@ -101,6 +109,34 @@ export function crearRepositorioEspacios(pool: Pool): RepositorioEspacios {
         capacidad: Number(fila.capacidad),
       }));
     },
+
+    async salonesTodos() {
+      const resultado = await pool.query<{
+        id: string;
+        codigo: string;
+        tipo: string;
+        capacidad: string;
+        piso: number;
+        edificio: string;
+        edificio_codigo: string;
+      }>(
+        `SELECT s.id, s.codigo, s.tipo, s.capacidad, pi.numero AS piso,
+                e.nombre AS edificio, e.codigo AS edificio_codigo
+         FROM salon s
+         JOIN piso pi ON pi.id = s.piso_id
+         JOIN edificio e ON e.id = pi.edificio_id
+         ORDER BY e.codigo, pi.numero, s.codigo`,
+      );
+      return resultado.rows.map((fila) => ({
+        id: fila.id,
+        codigo: fila.codigo,
+        tipo: fila.tipo,
+        capacidad: Number(fila.capacidad),
+        piso: Number(fila.piso),
+        edificio: fila.edificio,
+        edificioCodigo: fila.edificio_codigo,
+      }));
+    },
   };
 }
 
@@ -116,6 +152,8 @@ export function registrarRutasEspacios(app: FastifyInstance, repo: RepositorioEs
     if (!pisos) throw errores.noEncontrado('El edificio no existe');
     return pisos;
   });
+
+  app.get('/api/v1/espacios/salones', { preHandler: app.autenticar }, async () => repo.salonesTodos());
 
   app.get('/api/v1/espacios/pisos/:id/salones', { preHandler: app.autenticar }, async (peticion) => {
     const { id } = esquemaId.parse(peticion.params);

@@ -20,6 +20,19 @@ function repositorioFalso(): RepositorioEspacios {
       if (pisoId !== PISO_ID) return null;
       return [{ id: '5f1c2b4a-3333-4a2b-9c3d-0000000000d3', codigo: 'A-101', tipo: 'AULA', capacidad: 30 }];
     },
+    async salonesTodos() {
+      return [
+        {
+          id: '5f1c2b4a-3333-4a2b-9c3d-0000000000d3',
+          codigo: 'A-101',
+          tipo: 'AULA',
+          capacidad: 30,
+          piso: 1,
+          edificio: 'Edificio A',
+          edificioCodigo: 'A',
+        },
+      ];
+    },
   };
 }
 
@@ -90,6 +103,19 @@ describe('jerarquía del campus (§4.3, §7.7)', () => {
       headers: { authorization: `Bearer ${await token(['ESTUDIANTE'])}` },
     });
     expect(invalido.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('lista todos los salones con su ubicación plana', async () => {
+    const app = await crearApp();
+    const respuesta = await app.inject({
+      method: 'GET',
+      url: '/api/v1/espacios/salones',
+      headers: { authorization: `Bearer ${await token(['ESTUDIANTE'])}` },
+    });
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.json()[0]).toMatchObject({ codigo: 'A-101', piso: 1, edificioCodigo: 'A' });
     await app.close();
   });
 });

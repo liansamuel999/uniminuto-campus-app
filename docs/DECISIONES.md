@@ -30,6 +30,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | K. Semilla y demo | D-61 – D-62 | 1 |
 | L. Foros, comunicación y reglas (Fase 3) | D-65 – D-69 | 3 |
 | M. Módulo académico y evaluación docente (Fase 4) | D-70 – D-71 | 4 |
+| N. Administración, incidencias y auditoría (Fase 5) | D-72 – D-74 | 5 |
 
 ---
 
@@ -180,6 +181,16 @@ el alcance ni los contratos fijados en el documento fuente.
 |---|---|---|
 | D-70 | La evaluación docente usa **cinco criterios** fijos: `dominio`, `claridad`, `metodologia`, `evaluacion` y `acompanamiento`, cada uno entero de 1 a 5; la API exige los cinco y un comentario opcional de hasta 1000 caracteres. Es **única por inscripción** (`UNIQUE (inscripcion_id)`, §4.2) y el docente se toma del grupo de la inscripción, no del cuerpo de la petición. `GET /evaluaciones-docentes/resumen` solo lo ve el Admin Académico y devuelve promedios por criterio sin comentarios identificables (D-49). | Permitir criterios libres o evaluar por profesor sin asignatura; exponer comentarios en los agregados. |
 | D-71 | La **caché offline de lectura** de la Fase 4 usa las cajas Hive `horario` y `notas` (D-40) con vigencia de **12 h**: al guardar una respuesta se escribe el JSON con marca de tiempo; si la petición falla por red se muestra el dato guardado con el aviso «sin conexión» y, si no hay caché vigente, se muestra el error. La escritura (entregas, evaluación docente) no se hace offline. | Guardar indefinidamente (datos viejos) o no cachear (incumple el criterio «el horario se ve sin conexión»). |
+
+---
+
+## N. Administración, incidencias y auditoría (Fase 5)
+
+| ID | Decisión registrada | Alternativa descartada |
+|---|---|---|
+| D-72 | La tabla `incidencia` (migración `0008`) guarda `usuario_id` (quien reporta), `descripcion`, `estado` (`ABIERTA`, `EN_PROCESO`, `RESUELTA`, `CERRADA`), `resolucion`, `atendida_por`, `creada_en` y `actualizada_en`. Cualquier rol autenticado crea y consulta las propias; Soporte consulta todas (opcionalmente por estado) y actualiza estado/resolución. La semilla crea dos incidencias ficticias para poder demostrar la bandeja de Soporte. | Tabla de tickets genérica con categorías y adjuntos (alcance no pedido) o no persistir las incidencias. |
+| D-73 | Los endpoints administrativos se publican con rutas de recurso y RBAC de la matriz §5: `/periodos`, `/asignaturas`, `/grupos` (con `PUT /grupos/{id}` para asignar docente), `/inscripciones`, `/admin/usuarios?rol=`, CRUD de `/espacios/edificios|pisos|salones` y `/horarios`, `/incidencias` y `/auditoria`. **Se añaden al contrato §7.7** `GET /admin/usuarios` (selector de docentes/estudiantes), `GET /auditoria/acciones` (valores del filtro) y `GET /espacios/salones` (lista plana con ubicación), con el mismo criterio que D-49 y D-69. Los errores de integridad referencial (`23503`) y de duplicado (`23505`) se traducen a `409 CONFLICTO` con un mensaje de dominio. | Exponer un único endpoint `/admin` con acciones por `body` (peor contrato y peor RBAC por ruta) o dejar los selectores sin endpoint (el panel no podría asignar docentes). |
+| D-74 | La auditoría es **estrictamente de solo lectura**: `GET /auditoria` (rol Auditor, filtros `desde`, `hasta`, `accion`, `actorId`, `antesDe` como cursor y `limite` 1–200) y `GET /auditoria/acciones`; no existen rutas de actualización ni borrado sobre `evento_auditoria`. La asignación de docente desde `PUT /grupos/{id}` escribe el evento `ASIGNAR_DOCENTE` (`grupo:{id}`, resultado `OK`) en la misma transacción del cambio, según §8.1. | Permitir que el Auditor modifique o borre eventos (rompe el propósito del rol) o no registrar el cambio de docente (incumple §8.1). |
 
 ---
 

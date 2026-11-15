@@ -152,11 +152,31 @@ inscripción). En la app, **Mi horario**, **Mis asignaturas** (con evaluación d
 docente a calificar) y **Campus** consumen estos endpoints; el horario y las notas se guardan en
 Hive con vigencia de 12 h y se muestran sin conexión con un aviso (D-71).
 
+## Panel administrativo y auditoría (Fase 5)
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `GET/POST/PUT/DELETE /api/v1/periodos` | Admin Académico (lectura también Docente) | CRUD de periodos; uno solo puede quedar activo |
+| `GET/POST/PUT/DELETE /api/v1/asignaturas` | Admin Académico (lectura también Docente) | Catálogo de asignaturas con créditos |
+| `GET/POST/PUT/DELETE /api/v1/grupos` | Admin Académico (el Docente solo ve los suyos) | Grupos por asignatura y periodo; `PUT /grupos/{id}` asigna docente y deja evento `ASIGNAR_DOCENTE` |
+| `GET/POST/PUT/DELETE /api/v1/inscripciones` | Admin Académico (lectura también Docente) | Inscripción de estudiantes y cambio de estado |
+| `GET /api/v1/admin/usuarios?rol=` | Admin Académico | Catálogo de estudiantes/docentes para las asignaciones (D-73) |
+| `POST/PUT/DELETE /api/v1/espacios/edificios` · `…/pisos` · `…/salones` | Admin de Espacios | CRUD del catálogo; `GET /espacios/salones` devuelve la lista plana con ubicación |
+| `GET/POST/PUT/DELETE /api/v1/horarios` | Admin de Espacios (lectura también Admin Académico) | Asignación de salón a la franja de un grupo |
+| `POST /api/v1/incidencias` · `GET /api/v1/incidencias` | Autenticado (propias) | Reporte y consulta de incidencias; Soporte ve todas con `?estado=` y las actualiza (D-50, D-72) |
+| `PUT /api/v1/incidencias/{id}` | Soporte | Cambia estado y deja resolución |
+| `GET /api/v1/auditoria` · `GET /api/v1/auditoria/acciones` | Auditor | Bitácora de solo lectura con filtros de fecha, acción y actor; no existen endpoints de escritura (D-74) |
+
+En la app, el inicio muestra el panel según el rol activo: **Administración académica** (Admin
+Académico), **Espacios y horarios** (Admin de Espacios), **Gestión de incidencias** (Soporte),
+**Auditoría** (Auditor) e **Incidencias** para el resto de roles. Los códigos de error de integridad
+(borrar algo con registros asociados, duplicados) se traducen a `409 CONFLICTO`.
+
 ## Pruebas
 
 ```bash
 npm run api:test     # vitest: health, auth, carnet, aulas, calificaciones, correos, horarios,
-                     # evaluación docente, espacios y transacciones
+                     # evaluación docente, espacios, administración, incidencias y auditoría
 npm run app:test     # flutter test: PhoneFrame, caché Hive, localización y verificador
 flutter analyze app  # sin errores (con Flutter 3.50 solo avisos de SDK, D-66)
 ```
@@ -191,5 +211,5 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 2 — Carnet y QR offline | ✅ completada (2026-11-13) |
 | 3 — Aulas virtuales y calificaciones | ✅ completada (2026-11-14) |
 | 4 — Horarios y módulo académico | ✅ completada (2026-11-14) |
-| 5 — Panel administrativo y auditoría | pendiente |
+| 5 — Panel administrativo y auditoría | ✅ completada (2026-11-14) |
 | 6 — Cierre y demo pública | pendiente |

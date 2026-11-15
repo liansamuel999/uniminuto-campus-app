@@ -429,6 +429,26 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
         );
       }
     }
+
+    log('Incidencias de demostración');
+    const estudianteDemo = usuariosSembrados.find((usuario) => usuario.rol === 'ESTUDIANTE');
+    if (estudianteDemo) {
+      const incidenciasDemo = [
+        'El lector de la entrada del Edificio B no reconoce el QR del carnet',
+        'La sala de autorecreación B-301 aparece ocupada sin reserva',
+      ];
+      for (const descripcion of incidenciasDemo) {
+        const existe = await cliente.query('SELECT 1 FROM incidencia WHERE descripcion = $1', [
+          descripcion,
+        ]);
+        if ((existe.rowCount ?? 0) === 0) {
+          await cliente.query('INSERT INTO incidencia (usuario_id, descripcion) VALUES ($1, $2)', [
+            estudianteDemo.id,
+            descripcion,
+          ]);
+        }
+      }
+    }
   });
 
   const resumen = await pool.query<{ usuarios: number; grupos: number; salones: number; horarios: number }>(
