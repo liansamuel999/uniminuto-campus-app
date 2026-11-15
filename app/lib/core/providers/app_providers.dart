@@ -11,9 +11,9 @@ import '../config/app_config.dart';
 /// Instancia única de Firebase Authentication.
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
 
-/// Foros y anuncios en Firestore (Fase 3, D-47 y D-48).
+/// Foros y anuncios (la API valida acceso y usa Firestore con el Admin SDK, D-78).
 final comunicacionRepositoryProvider = Provider<RepositorioComunicacion>(
-  (ref) => RepositorioComunicacion(),
+  (ref) => RepositorioComunicacion(ref.watch(apiClientProvider)),
 );
 
 /// Lecturas académicas con caché offline (Fase 4, D-40).

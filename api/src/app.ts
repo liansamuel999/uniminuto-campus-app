@@ -55,10 +55,25 @@ import {
   type RepositorioReservaciones,
 } from './modules/reservaciones/reservaciones.js';
 import { crearRepositorioAulas, registrarRutasAulas, type RepositorioAulas } from './modules/aulas/aulas.js';
+import {
+  crearRepositorioAulasSocial,
+  registrarRutasAulasSocial,
+  type RepositorioAulasSocial,
+} from './modules/aulas/aulas_participantes.js';
+import {
+  crearRepositorioAulasDocente,
+  registrarRutasAulasDocente,
+  type RepositorioAulasDocente,
+} from './modules/aulas/aulas_docente.js';
 import { crearRepositorioEntregas, registrarRutasEntregas, type RepositorioEntregas } from './modules/actividades/entregas.js';
 import { crearRepositorioCuestionarios, registrarRutasCuestionarios, type RepositorioCuestionarios } from './modules/actividades/cuestionarios.js';
 import { crearRepositorioArchivos, registrarRutasArchivos, type RepositorioArchivos } from './modules/archivos/archivos.js';
 import { crearRepositorioCorreos, registrarRutasCorreos, type RepositorioCorreos } from './modules/comunicacion/correos.js';
+import {
+  crearRepositorioComunicacion,
+  registrarRutasComunicacion,
+  type RepositorioComunicacion,
+} from './modules/comunicacion/firestore_comunicacion.js';
 import { crearRepositorioCalificaciones, registrarRutasCalificaciones, type RepositorioCalificaciones } from './modules/calificaciones/calificaciones.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
 import { registrarPluginAuth } from './plugins/auth.js';
@@ -80,12 +95,15 @@ export interface OpcionesApp {
   repositorioReservaciones?: RepositorioReservaciones;
   /** Permite inyectar el repositorio de aulas (pruebas). */
   repositorioAulas?: RepositorioAulas;
+  repositorioAulasSocial?: RepositorioAulasSocial;
+  repositorioAulasDocente?: RepositorioAulasDocente;
   /** Permite inyectar el repositorio de entregas (pruebas). */
   repositorioEntregas?: RepositorioEntregas;
   /** Permite inyectar cuestionarios y archivos (pruebas). */
   repositorioCuestionarios?: RepositorioCuestionarios;
   repositorioArchivos?: RepositorioArchivos;
   repositorioCorreos?: RepositorioCorreos;
+  repositorioComunicacion?: RepositorioComunicacion;
   repositorioCalificaciones?: RepositorioCalificaciones;
   /** Permite inyectar horarios, evaluaciones y espacios (pruebas). */
   repositorioHorarios?: RepositorioHorarios;
@@ -224,12 +242,24 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     opciones.repositorioReservaciones ?? crearRepositorioReservaciones(pool),
   );
   registrarRutasAulas(app, opciones.repositorioAulas ?? crearRepositorioAulas(pool));
+  registrarRutasAulasSocial(
+    app,
+    opciones.repositorioAulasSocial ?? crearRepositorioAulasSocial(pool),
+  );
+  registrarRutasAulasDocente(
+    app,
+    opciones.repositorioAulasDocente ?? crearRepositorioAulasDocente(pool),
+  );
   registrarRutasEntregas(app, opciones.repositorioEntregas ?? crearRepositorioEntregas(pool, env));
   registrarRutasCuestionarios(
     app,
     opciones.repositorioCuestionarios ?? crearRepositorioCuestionarios(pool),
   );
   registrarRutasCorreos(app, opciones.repositorioCorreos ?? crearRepositorioCorreos(pool));
+  registrarRutasComunicacion(
+    app,
+    opciones.repositorioComunicacion ?? crearRepositorioComunicacion(pool),
+  );
   registrarRutasCalificaciones(
     app,
     opciones.repositorioCalificaciones ?? crearRepositorioCalificaciones(pool),

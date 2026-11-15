@@ -1,6 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../core/api/api_client.dart';
 
-/// Hilo de un foro de actividad (`foros/{foroId}/hilos`, D-47).
+/// Hilo de un foro de actividad (servido por la API sobre Firestore, D-78).
 class HiloForo {
   const HiloForo({
     required this.id,
@@ -17,7 +17,7 @@ class HiloForo {
   final DateTime? creadoEn;
 }
 
-/// Mensaje dentro de un hilo (`foros/{foroId}/hilos/{hiloId}/mensajes`).
+/// Mensaje dentro de un hilo.
 class MensajeForo {
   const MensajeForo({
     required this.id,
@@ -32,7 +32,7 @@ class MensajeForo {
   final DateTime? creadoEn;
 }
 
-/// Anuncio institucional de un aula (`anuncios/{aulaId}/items`, D-48).
+/// Anuncio institucional de un aula.
 class AnuncioAula {
   const AnuncioAula({
     required this.id,
@@ -51,32 +51,33 @@ class AnuncioAula {
   final DateTime? creadoEn;
 }
 
-/// Repositorio de foros y anuncios en Cloud Firestore (D-41, D-47 y D-48).
+/// Repositorio de foros y anuncios.
 ///
-/// Las reglas de seguridad autorizan por membresía del aula: el espejo
-/// `aulas_index/{aulaId}` lo mantiene la API (semilla) y cada hilo/anuncio guarda `aula_id`.
+/// La API valida la pertenencia al aula y lee/escribe Firestore con el Admin SDK (D-78); así las
+/// consultas de lista funcionan sin depender de reglas de seguridad que el motor no admite para
+/// queries con `get()`. Las pantallas refrescan al abrir, al deslizar y después de escribir.
 class RepositorioComunicacion {
-  RepositorioComunicacion({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  RepositorioComunicacion(this._api);
 
-  final FirebaseFirestore _db;
+  final ApiClient _api;
 
-  CollectionReference<Map<String, dynamic>> _hilos(String foroId) =>
-      _db.collection('foros').doc(foroId).collection('hilos');
+  static List<Map<String, dynamic>> _mapas(List<dynamic> datos) =>
+      datos.whereType<Map>().map((fila) => Map<String, dynamic>.from(fila)).toList();
 
-  Stream<List<HiloForo>> hilos(String foroId) => _hilos(foroId)
-      .orderBy('creado_en', descending: true)
-      .snapshots()
-      .map((snapshot) => [
-            for (final doc in snapshot.docs)
-              HiloForo(
-                id: doc.id,
-                titulo: '${doc.data()['titulo'] ?? 'Sin título'}',
-                autorNombre: '${doc.data()['autor_nombre'] ?? 'Participante'}',
-                autorUid: '${doc.data()['autor_uid'] ?? ''}',
-                creadoEn: _fecha(doc.data()['creado_en']),
-              ),
-          ]);
+  static DateTime? _fecha(dynamic valor) => DateTime.tryParse('$valor');
+
+  Future<List<HiloForo>> hilos(String foroId) async {
+    final datos = await _api.getList('/foros/$foroId/hilos');
+    return _mapas(datos)
+        .map((fila) => HiloForo(
+              id: '${fila['id']}',
+              titulo: '${fila['titulo']}',
+              autorNombre: '${fila['autorNombre'] ?? 'Participante'}',
+              autorUid: '${fila['autorUid'] ?? ''}',
+              creadoEn: _fecha(fila['creadoEn']),
+            ))
+        .toList();
+  }
 
   Future<void> crearHilo({
     required String foroId,
@@ -85,30 +86,20 @@ class RepositorioComunicacion {
     required String autorNombre,
     required String titulo,
   }) async {
-    await _hilos(foroId).add({
-      'titulo': titulo,
-      'autor_uid': autorUid,
-      'autor_nombre': autorNombre,
-      'aula_id': aulaId,
-      'foro_id': foroId,
-      'creado_en': FieldValue.serverTimestamp(),
-    });
+    await _api.postJson('/foros/$foroId/hilos', cuerpo: {'titulo': titulo});
   }
 
-  Stream<List<MensajeForo>> mensajes(String foroId, String hiloId) => _hilos(foroId)
-      .doc(hiloId)
-      .collection('mensajes')
-      .orderBy('creado_en')
-      .snapshots()
-      .map((snapshot) => [
-            for (final doc in snapshot.docs)
-              MensajeForo(
-                id: doc.id,
-                texto: '${doc.data()['texto'] ?? ''}',
-                autorNombre: '${doc.data()['autor_nombre'] ?? 'Participante'}',
-                creadoEn: _fecha(doc.data()['creado_en']),
-              ),
-          ]);
+  Future<List<MensajeForo>> mensajes(String foroId, String hiloId) async {
+    final datos = await _api.getList('/foros/$foroId/hilos/$hiloId/mensajes');
+    return _mapas(datos)
+        .map((fila) => MensajeForo(
+              id: '${fila['id']}',
+              texto: '${fila['texto']}',
+              autorNombre: '${fila['autorNombre'] ?? 'Participante'}',
+              creadoEn: _fecha(fila['creadoEn']),
+            ))
+        .toList();
+  }
 
   Future<void> enviarMensaje({
     required String foroId,
@@ -118,32 +109,22 @@ class RepositorioComunicacion {
     required String autorNombre,
     required String texto,
   }) async {
-    await _hilos(foroId).doc(hiloId).collection('mensajes').add({
-      'texto': texto,
-      'autor_uid': autorUid,
-      'autor_nombre': autorNombre,
-      'aula_id': aulaId,
-      'creado_en': FieldValue.serverTimestamp(),
-    });
+    await _api.postJson('/foros/$foroId/hilos/$hiloId/mensajes', cuerpo: {'texto': texto});
   }
 
-  Stream<List<AnuncioAula>> anuncios(String aulaId) => _db
-      .collection('anuncios')
-      .doc(aulaId)
-      .collection('items')
-      .orderBy('creado_en', descending: true)
-      .snapshots()
-      .map((snapshot) => [
-            for (final doc in snapshot.docs)
-              AnuncioAula(
-                id: doc.id,
-                titulo: '${doc.data()['titulo'] ?? 'Anuncio'}',
-                cuerpo: '${doc.data()['cuerpo'] ?? ''}',
-                importante: doc.data()['importante'] == true,
-                autorNombre: '${doc.data()['autor_nombre'] ?? 'Docente'}',
-                creadoEn: _fecha(doc.data()['creado_en']),
-              ),
-          ]);
+  Future<List<AnuncioAula>> anuncios(String aulaId) async {
+    final datos = await _api.getList('/aulas/$aulaId/anuncios');
+    return _mapas(datos)
+        .map((fila) => AnuncioAula(
+              id: '${fila['id']}',
+              titulo: '${fila['titulo']}',
+              cuerpo: '${fila['cuerpo']}',
+              importante: fila['importante'] == true,
+              autorNombre: '${fila['autorNombre'] ?? 'Docente'}',
+              creadoEn: _fecha(fila['creadoEn']),
+            ))
+        .toList();
+  }
 
   /// Publica un anuncio y devuelve su id para, si es importante, replicarlo por correo (D-48).
   Future<String> publicarAnuncio({
@@ -154,20 +135,11 @@ class RepositorioComunicacion {
     required String cuerpo,
     required bool importante,
   }) async {
-    final referencia = await _db.collection('anuncios').doc(aulaId).collection('items').add({
+    final respuesta = await _api.postJson('/aulas/$aulaId/anuncios', cuerpo: {
       'titulo': titulo,
       'cuerpo': cuerpo,
       'importante': importante,
-      'autor_uid': autorUid,
-      'autor_nombre': autorNombre,
-      'creado_en': FieldValue.serverTimestamp(),
     });
-    return referencia.id;
-  }
-
-  static DateTime? _fecha(dynamic valor) {
-    if (valor is Timestamp) return valor.toDate();
-    if (valor is String) return DateTime.tryParse(valor);
-    return null;
+    return '${respuesta['id']}';
   }
 }

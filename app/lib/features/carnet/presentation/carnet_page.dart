@@ -162,28 +162,59 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
       builder: (contexto) => AlertDialog(
         title: const Text('Revocar este dispositivo'),
         content: const Text(
-          'El QR dejará de funcionar en este dispositivo y deberás vincularlo de nuevo. '
+          'El QR de ingreso dejará de funcionar en este dispositivo y deberás vincularlo de nuevo. '
           'La revocación del carnet se sincroniza con los validadores cuando recuperen red.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Revocar')),
         ],
       ),
     );
-    if (confirmar != true) return;
+    if (confirmar != true || !mounted) return;
 
-    setState(() => _ocupado = true);
+    setState(() {
+      _ocupado = true;
+      _error = null;
+    });
     try {
       await _repo.revocar();
       if (!mounted) return;
+      _reloj?.cancel();
       setState(() {
         _resumen = null;
         _clave = null;
         _qr = null;
+        _servicio = null;
       });
-      _reloj?.cancel();
       await _inicializar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Dispositivo revocado. Puedes vincular uno nuevo.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'No se pudo revocar el dispositivo. Inténtalo de nuevo.');
+      }
+    } finally {
+      if (mounted) setState(() => _ocupado = false);
+    }
+  }
+
+  Future<void> _renovar() async {
+    setState(() {
+      _ocupado = true;
+      _error = null;
+    });
+    try {
+      final resumen = await _repo.renovar();
+      if (!mounted) return;
+      setState(() => _resumen = resumen);
+      await _prepararQr();
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
     } finally {
@@ -229,7 +260,17 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
               const SizedBox(height: 16),
               _tarjetaVinculacion(context),
             ],
-            if (!_cargando && _resumen?.tieneDispositivo == true && _resumen?.certificado != null) ...[
+            if (!_cargando &&
+                _resumen?.tieneDispositivo == true &&
+                _resumen?.certificado != null &&
+                _clave == null) ...[
+              const SizedBox(height: 16),
+              _tarjetaSinLlave(context),
+            ],
+            if (!_cargando &&
+                _resumen?.tieneDispositivo == true &&
+                _resumen?.certificado != null &&
+                _clave != null) ...[
               const SizedBox(height: 16),
               _tarjetaQr(context),
               const SizedBox(height: 12),
@@ -271,8 +312,12 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
                       ),
                       Text(perfil?.codigoInstitucional ?? carnet.codigoBarras,
                           style: Theme.of(context).textTheme.bodySmall),
-                      Text(perfil?.programa?.nombre ?? 'Sin programa',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant)),
+                      if (sesion?.roles.contains('ESTUDIANTE') == true)
+                        Text(perfil?.programa?.nombre ?? 'Sin programa',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: colores.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -285,7 +330,8 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
             ),
             const SizedBox(height: 12),
             Text(
-              'Vigente hasta ${_fecha(carnet.vigenteHasta)}',
+              'Vigente hasta ${_fecha(carnet.vigenteHasta)}'
+              '${_diasVigencia(carnet.vigenteHasta)}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant),
             ),
             if (_resumen!.dispositivoNombre != null)
@@ -324,6 +370,33 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
     );
   }
 
+  Widget _tarjetaSinLlave(BuildContext context) {
+    return Card(
+      color: Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: 0.5),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Este navegador no tiene la llave del dispositivo',
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 6),
+            const Text(
+              'El carnet está vinculado, pero la llave privada se guarda por navegador. '
+              'Vuelve a vincularlo aquí para mostrar el QR de ingreso.',
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: _ocupado ? null : _vincular,
+              icon: const Icon(Icons.phonelink_lock_outlined),
+              label: Text(_ocupado ? 'Vinculando…' : 'Vincular este navegador'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _tarjetaQr(BuildContext context) {
     final certificado = _resumen!.certificado!;
     final colores = Theme.of(context).colorScheme;
@@ -331,9 +404,22 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
     if (certificado.vencido) {
       return Card(
         color: colores.errorContainer.withValues(alpha: 0.4),
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('El certificado venció. Conéctate para renovar el carnet.'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('El certificado del carnet venció.'),
+              const SizedBox(height: 8),
+              const Text('Renueva el certificado para volver a generar el QR de ingreso.'),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _ocupado ? null : _renovar,
+                icon: const Icon(Icons.autorenew),
+                label: const Text('Renovar certificado'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -345,7 +431,7 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
           children: [
             TabBar(
               controller: _tabs,
-              tabs: const [Tab(text: 'QR dinámico'), Tab(text: 'Código de barras')],
+              tabs: const [Tab(text: 'QR de ingreso'), Tab(text: 'Código de barras')],
             ),
             SizedBox(
               height: 360,
@@ -366,7 +452,23 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
   Widget _vistaQr(BuildContext context) {
     final qr = _qr;
     if (qr == null) {
-      return const Center(child: Text('Preparando el QR…'));
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 12),
+          const Text('Preparando el QR de ingreso…'),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+        ],
+      );
     }
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -389,7 +491,7 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
           style: Theme.of(context).textTheme.bodySmall,
         ),
         Text(
-          'Úsalo solo en el torniquete: una captura de pantalla deja de ser válida.',
+          'Muéstralo en el lector de ingreso: una captura de pantalla deja de ser válida.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
@@ -433,6 +535,17 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
 
   String _fecha(DateTime fecha) => '${fecha.day.toString().padLeft(2, '0')}/'
       '${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+
+  /// Días que faltan para el vencimiento del carnet, para que la fecha no parezca «quieta».
+  String _diasVigencia(DateTime vigenteHasta) {
+    final hoy = DateTime.now();
+    final dias = DateTime(vigenteHasta.year, vigenteHasta.month, vigenteHasta.day)
+        .difference(DateTime(hoy.year, hoy.month, hoy.day))
+        .inDays;
+    if (dias < 0) return ' · vencido';
+    if (dias == 0) return ' · vence hoy';
+    return ' · quedan $dias días';
+  }
 }
 
 class _Banner extends StatelessWidget {

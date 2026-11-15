@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
-import '../../../core/session/session_controller.dart';
+import '../../../core/utils/formato.dart';
 import '../data/comunicacion_repository.dart';
 
-/// Foro de una actividad (`foroId` = `actividad_id`, D-47). Hilos y mensajes viven en Firestore.
-class ForoPage extends ConsumerWidget {
+/// Foro de una actividad (`foroId` = `actividad_id`, D-47).
+///
+/// Las pantallas leen y escriben a través de la API, que valida la pertenencia al aula y usa
+/// Firestore con el Admin SDK (D-78). Se refresca al abrir, al deslizar y después de publicar.
+class ForoPage extends ConsumerStatefulWidget {
   const ForoPage({super.key, required this.foroId, required this.aulaId, required this.titulo});
 
   final String foroId;
@@ -14,90 +18,38 @@ class ForoPage extends ConsumerWidget {
   final String titulo;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sesion = ref.watch(sesionProvider).valueOrNull;
-    final repo = ref.watch(comunicacionRepositoryProvider);
+  ConsumerState<ForoPage> createState() => _ForoPageState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Foro')),
-      floatingActionButton: sesion == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _abrirNuevoHilo(context, ref, sesion),
-              icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('Nuevo hilo'),
-            ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(titulo, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 4),
-                Text(
-                  'Hilos de discusión del aula · datos de muestra',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<HiloForo>>(
-              stream: repo.hilos(foroId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const _Aviso(
-                    icono: Icons.cloud_off_outlined,
-                    texto: 'No se pudieron leer los hilos. Revisa la conexión '
-                        'o que las reglas de Firestore estén desplegadas.',
-                  );
-                }
-                final hilos = snapshot.data ?? const <HiloForo>[];
-                if (hilos.isEmpty) {
-                  return const _Aviso(
-                    icono: Icons.forum_outlined,
-                    texto: 'Todavía no hay hilos en este foro. Crea el primero.',
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                  itemCount: hilos.length,
-                  itemBuilder: (context, indice) {
-                    final hilo = hilos[indice];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        leading: const Icon(Icons.forum_outlined),
-                        title: Text(hilo.titulo),
-                        subtitle: Text(
-                          '${hilo.autorNombre}'
-                          '${hilo.creadoEn == null ? '' : ' · ${_fechaCorta(hilo.creadoEn!)}'}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => HiloForoPage(foroId: foroId, aulaId: aulaId, hilo: hilo),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+class _ForoPageState extends ConsumerState<ForoPage> {
+  List<HiloForo> _hilos = const [];
+  bool _cargando = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
   }
 
-  Future<void> _abrirNuevoHilo(BuildContext context, WidgetRef ref, Sesion sesion) async {
+  Future<void> _cargar() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final hilos = await ref.read(comunicacionRepositoryProvider).hilos(widget.foroId);
+      if (mounted) setState(() => _hilos = hilos);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.mensaje);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudieron cargar los hilos del foro.');
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _nuevoHilo() async {
     final controlador = TextEditingController();
     final confirmado = await showDialog<bool>(
       context: context,
@@ -110,39 +62,102 @@ class ForoPage extends ConsumerWidget {
           decoration: const InputDecoration(labelText: 'Título del hilo'),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(contexto).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(contexto).pop(true),
-            child: const Text('Crear'),
-          ),
+          OutlinedButton(onPressed: () => Navigator.of(contexto).pop(false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.of(contexto).pop(true), child: const Text('Crear')),
         ],
       ),
     );
-    final tituloHilo = controlador.text.trim();
+    final titulo = controlador.text.trim();
     controlador.dispose();
-    if (confirmado != true || tituloHilo.length < 3) return;
+    if (confirmado != true || titulo.length < 3) return;
     try {
       await ref.read(comunicacionRepositoryProvider).crearHilo(
-            foroId: foroId,
-            aulaId: aulaId,
-            autorUid: sesion.uid,
-            autorNombre: sesion.perfil.nombreCompleto,
-            titulo: tituloHilo,
+            foroId: widget.foroId,
+            aulaId: widget.aulaId,
+            autorUid: '',
+            autorNombre: '',
+            titulo: titulo,
           );
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo crear el hilo. ¿Estás conectado?')),
-        );
+      await _cargar();
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
       }
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Foro'),
+        actions: [IconButton(onPressed: _cargando ? null : _cargar, icon: const Icon(Icons.refresh))],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _nuevoHilo,
+        icon: const Icon(Icons.add_comment_outlined),
+        label: const Text('Nuevo hilo'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _cargar,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          children: [
+            Text(widget.titulo, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('Hilos de discusión del aula · datos de muestra',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 12),
+            if (_cargando)
+              const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            if (_error != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colores.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(_error!),
+              ),
+            if (!_cargando && _error == null && _hilos.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('Todavía no hay hilos en este foro. Crea el primero.'),
+              ),
+            for (final hilo in _hilos)
+              Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: const Icon(Icons.forum_outlined),
+                  title: Text(hilo.titulo),
+                  subtitle: Text(
+                    '${hilo.autorNombre}'
+                    '${hilo.creadoEn == null ? '' : ' · ${fechaHoraCorta(hilo.creadoEn)}'}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => HiloForoPage(
+                          foroId: widget.foroId,
+                          aulaId: widget.aulaId,
+                          hilo: hilo,
+                        ),
+                      ),
+                    );
+                    await _cargar();
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-/// Hilo abierto: mensajes en tiempo real y caja de respuesta.
+/// Hilo abierto: mensajes y caja de respuesta.
 class HiloForoPage extends ConsumerStatefulWidget {
   const HiloForoPage({super.key, required this.foroId, required this.aulaId, required this.hilo});
 
@@ -156,7 +171,16 @@ class HiloForoPage extends ConsumerStatefulWidget {
 
 class _HiloForoPageState extends ConsumerState<HiloForoPage> {
   final _mensaje = TextEditingController();
+  List<MensajeForo> _mensajes = const [];
+  bool _cargando = true;
   bool _enviando = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
 
   @override
   void dispose() {
@@ -164,26 +188,41 @@ class _HiloForoPageState extends ConsumerState<HiloForoPage> {
     super.dispose();
   }
 
+  Future<void> _cargar() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final mensajes = await ref
+          .read(comunicacionRepositoryProvider)
+          .mensajes(widget.foroId, widget.hilo.id);
+      if (mounted) setState(() => _mensajes = mensajes);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.mensaje);
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
   Future<void> _enviar() async {
     final texto = _mensaje.text.trim();
-    final sesion = ref.read(sesionProvider).valueOrNull;
-    if (texto.length < 2 || sesion == null) return;
+    if (texto.length < 2) return;
     setState(() => _enviando = true);
     try {
       await ref.read(comunicacionRepositoryProvider).enviarMensaje(
             foroId: widget.foroId,
             hiloId: widget.hilo.id,
             aulaId: widget.aulaId,
-            autorUid: sesion.uid,
-            autorNombre: sesion.perfil.nombreCompleto,
+            autorUid: '',
+            autorNombre: '',
             texto: texto,
           );
       _mensaje.clear();
-    } catch (_) {
+      await _cargar();
+    } on ApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo enviar el mensaje.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
       }
     } finally {
       if (mounted) setState(() => _enviando = false);
@@ -192,46 +231,38 @@ class _HiloForoPageState extends ConsumerState<HiloForoPage> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.watch(comunicacionRepositoryProvider);
+    final colores = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: Text(widget.hilo.titulo, overflow: TextOverflow.ellipsis)),
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<MensajeForo>>(
-              stream: repo.mensajes(widget.foroId, widget.hilo.id),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const _Aviso(
-                    icono: Icons.cloud_off_outlined,
-                    texto: 'No se pudieron leer los mensajes de este hilo.',
-                  );
-                }
-                final mensajes = snapshot.data ?? const <MensajeForo>[];
-                if (mensajes.isEmpty) {
-                  return const _Aviso(icono: Icons.chat_bubble_outline, texto: 'Sé el primero en responder.');
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: mensajes.length,
-                  itemBuilder: (context, indice) {
-                    final mensaje = mensajes[indice];
-                    return Card(
+            child: RefreshIndicator(
+              onRefresh: _cargar,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_cargando)
+                    const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+                  if (_error != null) Text(_error!, style: TextStyle(color: colores.error)),
+                  if (!_cargando && _error == null && _mensajes.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Text('Sé el primero en responder.'),
+                    ),
+                  for (final mensaje in _mensajes)
+                    Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         title: Text(mensaje.texto),
                         subtitle: Text(
                           '${mensaje.autorNombre}'
-                          '${mensaje.creadoEn == null ? '' : ' · ${_fechaCorta(mensaje.creadoEn!)}'}',
+                          '${mensaje.creadoEn == null ? '' : ' · ${fechaHoraCorta(mensaje.creadoEn)}'}',
                         ),
                       ),
-                    );
-                  },
-                );
-              },
+                    ),
+                ],
+              ),
             ),
           ),
           SafeArea(
@@ -247,7 +278,6 @@ class _HiloForoPageState extends ConsumerState<HiloForoPage> {
                       maxLines: 4,
                       decoration: const InputDecoration(
                         hintText: 'Escribe un mensaje…',
-                        border: OutlineInputBorder(),
                         isDense: true,
                       ),
                     ),
@@ -271,35 +301,4 @@ class _HiloForoPageState extends ConsumerState<HiloForoPage> {
       ),
     );
   }
-}
-
-class _Aviso extends StatelessWidget {
-  const _Aviso({required this.icono, required this.texto});
-
-  final IconData icono;
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) {
-    final colores = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icono, size: 44, color: colores.outline),
-            const SizedBox(height: 10),
-            Text(texto, textAlign: TextAlign.center, style: TextStyle(color: colores.onSurfaceVariant)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _fechaCorta(DateTime fecha) {
-  final local = fecha.toLocal();
-  return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')} '
-      '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }

@@ -1,6 +1,9 @@
+import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/session/session_controller.dart';
 import '../../../core/widgets/aviso_muestra.dart';
@@ -8,12 +11,69 @@ import '../domain/perfil_usuario.dart';
 import 'cambiar_contrasena_dialog.dart';
 import 'editar_perfil_dialog.dart';
 
-/// Perfil propio (§7.7): datos, roles y acciones de cuenta.
-class PerfilPage extends ConsumerWidget {
+/// Perfil propio (§7.7): datos, foto, roles y acciones de cuenta.
+///
+/// Los estudiantes **no** editan sus datos personales: cualquier cambio se gestiona en la
+/// oficina de registro. Solo la foto de perfil es editable desde la app.
+class PerfilPage extends ConsumerStatefulWidget {
   const PerfilPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PerfilPage> createState() => _PerfilPageState();
+}
+
+class _PerfilPageState extends ConsumerState<PerfilPage> {
+  static const XTypeGroup _tiposImagen = XTypeGroup(
+    label: 'Imágenes',
+    extensions: ['png', 'jpg', 'jpeg', 'webp'],
+    mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+  );
+
+  bool _subiendoFoto = false;
+
+  Future<void> _cambiarFoto(PerfilUsuario perfil) async {
+    setState(() => _subiendoFoto = true);
+    try {
+      final archivo = await openFile(acceptedTypeGroups: const [_tiposImagen]);
+      if (archivo == null) return;
+      final bytes = await archivo.readAsBytes();
+      final mime = archivo.mimeType ?? 'image/jpeg';
+      final api = ref.read(apiClientProvider);
+
+      final firma = await api.postJson('/archivos/subida', cuerpo: {
+        'contexto': 'PERFIL',
+        'nombre': archivo.name,
+        'mime': mime,
+        'tamano': bytes.length,
+      });
+      await api.dio.put<dynamic>(
+        '${firma['urlPut']}',
+        data: bytes,
+        options: Options(headers: {'Content-Type': mime}),
+      );
+      await api.putJson('/mi-perfil', cuerpo: {'fotoKey': firma['objetoKey']});
+      ref.invalidate(sesionProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto de perfil actualizada.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo subir la foto. Revisa la conexión.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subiendoFoto = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final sesion = ref.watch(sesionProvider).valueOrNull;
     final colores = Theme.of(context).colorScheme;
 
@@ -23,6 +83,7 @@ class PerfilPage extends ConsumerWidget {
 
     final perfil = sesion.perfil;
     final rol = rolEfectivo(ref, sesion);
+    final esEstudiante = sesion.roles.contains('ESTUDIANTE');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
@@ -39,18 +100,33 @@ class PerfilPage extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: colores.primaryContainer,
-                          child: Text(
-                            _iniciales(perfil),
-                            style: TextStyle(
-                              color: colores.onPrimaryContainer,
-                              fontWeight: FontWeight.w700,
+                        Stack(
+                          children: [
+                            _Avatar(
+                              perfil: perfil,
+                              iniciales: _iniciales(perfil),
+                              subiendo: _subiendoFoto,
                             ),
-                          ),
+                            Positioned(
+                              right: -2,
+                              bottom: -2,
+                              child: Material(
+                                color: colores.primary,
+                                shape: const CircleBorder(),
+                                child: IconButton(
+                                  tooltip: 'Cambiar foto',
+                                  onPressed: _subiendoFoto ? null : () => _cambiarFoto(perfil),
+                                  iconSize: 16,
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(),
+                                  color: colores.onPrimary,
+                                  icon: const Icon(Icons.photo_camera_outlined),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,24 +149,47 @@ class PerfilPage extends ConsumerWidget {
                             ],
                           ),
                         ),
-                        IconButton(
-                          tooltip: 'Editar perfil',
-                          onPressed: () => showDialog<void>(
-                            context: context,
-                            builder: (_) => EditarPerfilDialog(perfil: perfil),
+                        if (!esEstudiante)
+                          IconButton(
+                            tooltip: 'Editar perfil',
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (_) => EditarPerfilDialog(perfil: perfil),
+                            ),
+                            icon: const Icon(Icons.edit_outlined),
                           ),
-                          icon: const Icon(Icons.edit_outlined),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    if (perfil.programa != null) ...[
+                    if (esEstudiante && perfil.programa != null) ...[
                       _Dato(etiqueta: 'Programa', valor: perfil.programa!.nombre),
                       const SizedBox(height: 8),
                     ],
                     _Dato(etiqueta: 'Documento', valor: perfil.documento ?? 'No registrado'),
                     const SizedBox(height: 8),
                     _Dato(etiqueta: 'Estado', valor: perfil.estado),
+                    if (esEstudiante) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: colores.surfaceContainerHighest.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 18, color: colores.onSurfaceVariant),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Si necesitas cambiar tus datos personales, acércate a la oficina de registro.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -102,10 +201,10 @@ class PerfilPage extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Roles', style: Theme.of(context).textTheme.titleSmall),
+                    Text('Rol activo', style: Theme.of(context).textTheme.titleSmall),
                     const SizedBox(height: 4),
                     Text(
-                      'Los roles vienen de los permisos de Firebase. El elegido solo cambia lo que ves.',
+                      'Los roles vienen de los permisos de Firebase. El elegido cambia la navegación que ves.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),
@@ -173,6 +272,66 @@ class PerfilPage extends ConsumerWidget {
     final inicialNombre = nombres.isEmpty ? '' : nombres[0];
     final inicialApellido = apellidos.isEmpty ? '' : apellidos[0];
     return '$inicialNombre$inicialApellido'.toUpperCase();
+  }
+}
+
+class _Avatar extends ConsumerWidget {
+  const _Avatar({required this.perfil, required this.iniciales, required this.subiendo});
+
+  final PerfilUsuario perfil;
+  final String iniciales;
+  final bool subiendo;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colores = Theme.of(context).colorScheme;
+
+    if (perfil.fotoKey == null) {
+      return CircleAvatar(
+        radius: 34,
+        backgroundColor: colores.primaryContainer,
+        child: Text(
+          iniciales,
+          style: TextStyle(color: colores.onPrimaryContainer, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ref.read(apiClientProvider).getJson(
+            '/archivos/por-clave/url',
+            parametros: {'objetoKey': perfil.fotoKey},
+          ),
+      builder: (context, snapshot) {
+        final url = snapshot.data?['url'] as String?;
+        if (snapshot.connectionState == ConnectionState.waiting || subiendo) {
+          return CircleAvatar(
+            radius: 34,
+            backgroundColor: colores.primaryContainer,
+            child: const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        if (url == null) {
+          return CircleAvatar(
+            radius: 34,
+            backgroundColor: colores.primaryContainer,
+            child: Text(
+              iniciales,
+              style: TextStyle(color: colores.onPrimaryContainer, fontWeight: FontWeight.w700),
+            ),
+          );
+        }
+        return CircleAvatar(
+          radius: 34,
+          backgroundColor: colores.primaryContainer,
+          backgroundImage: NetworkImage(url),
+        );
+      },
+    );
   }
 }
 

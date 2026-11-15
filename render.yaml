@@ -1,0 +1,43 @@
+# Blueprint de Render para la API de la demo (§7.4 de docs/arquitectura.md).
+# Las variables marcadas con `sync: false` se cargan a mano en el panel y no se versionan.
+services:
+  - type: web
+    name: uniminuto-campus-api
+    runtime: node
+    plan: free
+    rootDir: api
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: ENTORNO
+        value: prod
+      - key: LOG_LEVEL
+        value: info
+      - key: ENTREGA_GRACIA_HORAS
+        value: 24
+      - key: UPLOAD_MAX_BYTES
+        value: 52428800
+      - key: DATABASE_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: INSTITUTION_PRIVATE_KEY
+        sync: false
+      - key: INSTITUTION_KID
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_BUCKET
+        value: campus-app
+      - key: S3_REGION
+        value: auto

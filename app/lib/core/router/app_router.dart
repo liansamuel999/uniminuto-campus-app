@@ -7,7 +7,6 @@ import '../../features/carnet/presentation/carnet_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/perfil/presentation/perfil_page.dart';
 import '../../features/perfil/presentation/error_sesion_page.dart';
-import '../../features/validador/presentation/validador_page.dart';
 import '../../features/reservaciones/presentation/reservas_page.dart';
 import '../../features/aulas/presentation/aulas_page.dart';
 import '../../features/aulas/presentation/bandeja_page.dart';
@@ -16,7 +15,6 @@ import '../../features/admin/presentation/admin_academico_page.dart';
 import '../../features/admin/presentation/admin_espacios_page.dart';
 import '../../features/admin/presentation/auditoria_page.dart';
 import '../../features/admin/presentation/incidencias_page.dart';
-import '../../features/campus/presentation/campus_page.dart';
 import '../../features/horarios/presentation/horario_page.dart';
 import '../../features/academico/presentation/notas_page.dart';
 import '../session/session_controller.dart';
@@ -59,12 +57,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'asignaturas',
             builder: (context, estado) => const AsignaturasPage(),
           ),
-          GoRoute(path: '/campus', name: 'campus', builder: (context, estado) => const CampusPage()),
-          GoRoute(
-            path: '/admin-academico',
-            name: 'admin-academico',
-            builder: (context, estado) => const AdminAcademicoPage(),
-          ),
+          GoRoute(path: '/admin-academico', name: 'admin-academico', builder: (context, estado) => const AdminAcademicoPage()),
           GoRoute(
             path: '/admin-espacios',
             name: 'admin-espacios',
@@ -79,11 +72,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/auditoria',
             name: 'auditoria',
             builder: (context, estado) => const AuditoriaPage(),
-          ),
-          GoRoute(
-            path: '/validador',
-            name: 'validador',
-            builder: (context, estado) => const ValidadorPage(),
           ),
           GoRoute(path: '/perfil', name: 'perfil', builder: (context, estado) => const PerfilPage()),
           GoRoute(path: '/reservas', name: 'reservas', builder: (context, estado) => const ReservasPage()),

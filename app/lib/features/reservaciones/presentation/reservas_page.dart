@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
+import '../../../core/utils/formato.dart';
 
-/// Reservas por semana: calendario de 7 días, horas libres por sala y bloques de 10 minutos
-/// entre las 06:00 y las 20:00, con un máximo de 2 horas.
-///
-/// Nota de layout: la tira de días usa un `Row` con hijos `Expanded` (no un `ListView`
-/// horizontal anidado) para evitar problemas de restricciones dentro del scroll principal.
+/// Reservas de espacios de autorecreación: una semana, un día y franjas de 10 minutos
+/// entre las 06:00 y las 20:00 (máximo 2 horas).
 class ReservasPage extends ConsumerStatefulWidget {
   const ReservasPage({super.key});
 
@@ -23,12 +21,12 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
   static const int maximoMinutos = 120;
 
   final DateTime _hoy = DateTime.now();
-  late DateTime _inicioSemana = _lunesDe(_hoy);
-  late DateTime _diaSeleccionado = DateTime(_hoy.year, _hoy.month, _hoy.day);
+  late DateTime _inicioSemana = _lunesDe(DateTime.now());
+  late DateTime _diaSeleccionado = DateTime.now();
 
-  List<dynamic> _espacios = const [];
-  List<dynamic> _reservasSemana = const [];
-  List<dynamic> _mias = const [];
+  List<Map<String, dynamic>> _espacios = const [];
+  List<Map<String, dynamic>> _reservasSemana = const [];
+  List<Map<String, dynamic>> _mias = const [];
   bool _cargando = true;
   String? _error;
 
@@ -40,35 +38,34 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
   @override
   void initState() {
     super.initState();
+    _diaSeleccionado = DateTime(_hoy.year, _hoy.month, _hoy.day);
     _cargar();
   }
 
   String _iso(DateTime fecha) =>
       '${fecha.year.toString().padLeft(4, '0')}-${fecha.month.toString().padLeft(2, '0')}-${fecha.day.toString().padLeft(2, '0')}';
 
+  static List<Map<String, dynamic>> _mapas(List<dynamic> datos) =>
+      datos.whereType<Map>().map((fila) => Map<String, dynamic>.from(fila)).toList();
+
   Future<void> _cargar() async {
-    if (_cargando && _espacios.isNotEmpty) return;
     if (mounted) {
       setState(() {
         _cargando = true;
         _error = null;
       });
     }
-    final api = ref.read(apiClientProvider);
     try {
-      // Query como parámetro (no incrustada en la ruta) y con tiempo límite para no dejar
-      // la pantalla en carga indefinida si la red se queda colgada.
+      final api = ref.read(apiClientProvider);
       final semana = await api
           .getJson('/reservaciones/semana', parametros: {'desde': _iso(_inicioSemana)})
           .timeout(const Duration(seconds: 12));
-      final mias = await api
-          .getList('/reservaciones/mias')
-          .timeout(const Duration(seconds: 12));
+      final mias = await api.getList('/reservaciones/mias').timeout(const Duration(seconds: 12));
       if (!mounted) return;
       setState(() {
-        _espacios = semana['espacios'] as List<dynamic>? ?? const [];
-        _reservasSemana = semana['reservas'] as List<dynamic>? ?? const [];
-        _mias = mias;
+        _espacios = _mapas(semana['espacios'] as List<dynamic>? ?? const []);
+        _reservasSemana = _mapas(semana['reservas'] as List<dynamic>? ?? const []);
+        _mias = _mapas(mias);
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
@@ -79,69 +76,49 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     }
   }
 
-  List<dynamic> _reservasDelDia(String espacioId) {
-    return _reservasSemana.where((reserva) {
+  List<(int, int)> _ocupados(String espacioId) {
+    final resultado = <(int, int)>[];
+    for (final reserva in _reservasSemana) {
+      if ('${reserva['espacioId']}' != espacioId) continue;
       final inicio = DateTime.tryParse('${reserva['inicio']}')?.toLocal();
-      if (inicio == null) return false;
+      final fin = DateTime.tryParse('${reserva['fin']}')?.toLocal();
+      if (inicio == null || fin == null) continue;
       final mismoDia = inicio.year == _diaSeleccionado.year &&
           inicio.month == _diaSeleccionado.month &&
           inicio.day == _diaSeleccionado.day;
-      return mismoDia && '${reserva['espacioId']}' == espacioId;
-    }).toList();
-  }
-
-  List<(int, int)> _ocupados(String espacioId) {
-    return _reservasDelDia(espacioId).map((reserva) {
-      final inicio = DateTime.parse('${reserva['inicio']}').toLocal();
-      final fin = DateTime.parse('${reserva['fin']}').toLocal();
-      return (inicio.hour * 60 + inicio.minute, fin.hour * 60 + fin.minute);
-    }).toList();
+      if (!mismoDia) continue;
+      resultado.add((inicio.hour * 60 + inicio.minute, fin.hour * 60 + fin.minute));
+    }
+    return resultado;
   }
 
   String _hora(int minutos) =>
       '${(minutos ~/ 60).toString().padLeft(2, '0')}:${(minutos % 60).toString().padLeft(2, '0')}';
 
-  Future<void> _reservar(dynamic espacio) async {
-    final ocupados = _ocupados('${espacio['id']}');
-    final inicioElegido = await showDialog<int>(
+  Future<void> _reservar(Map<String, dynamic> espacio) async {
+    final seleccion = await showModalBottomSheet<(int, int)>(
       context: context,
-      builder: (_) => _DialogoSeleccion(
-        titulo: 'Hora de inicio',
-        opciones: [
-          for (var minuto = apertura; minuto + paso <= cierre; minuto += paso)
-            if (!ocupados.any((rango) => minuto < rango.$2 && minuto + paso > rango.$1)) minuto,
-        ],
-        etiqueta: _hora,
-        vacio: 'No hay horas libres este día.',
+      isScrollControlled: true,
+      builder: (_) => _HojaReserva(
+        espacioNombre: '${espacio['nombre']}',
+        ocupados: _ocupados('${espacio['id']}'),
+        apertura: apertura,
+        cierre: cierre,
+        paso: paso,
+        maximoMinutos: maximoMinutos,
+        etiquetaHora: _hora,
       ),
     );
-    if (inicioElegido == null || !mounted) return;
-
-    final finElegido = await showDialog<int>(
-      context: context,
-      builder: (_) => _DialogoSeleccion(
-        titulo: 'Hora de fin (máx. 2 h)',
-        opciones: [
-          for (var fin = inicioElegido + paso;
-              fin <= inicioElegido + maximoMinutos && fin <= cierre;
-              fin += paso)
-            if (!ocupados.any((rango) => inicioElegido < rango.$2 && fin > rango.$1)) fin,
-        ],
-        etiqueta: (minuto) => '${_hora(minuto)} (${minuto - inicioElegido} min)',
-        vacio: 'No hay franjas disponibles desde esa hora.',
-      ),
-    );
-    if (finElegido == null || !mounted) return;
+    if (seleccion == null || !mounted) return;
 
     final inicio = DateTime(
       _diaSeleccionado.year,
       _diaSeleccionado.month,
       _diaSeleccionado.day,
-      inicioElegido ~/ 60,
-      inicioElegido % 60,
+      seleccion.$1 ~/ 60,
+      seleccion.$1 % 60,
     );
-    final fin = inicio.add(Duration(minutes: finElegido - inicioElegido));
-
+    final fin = inicio.add(Duration(minutes: seleccion.$2 - seleccion.$1));
     try {
       await ref.read(apiClientProvider).postJson('/reservaciones', cuerpo: {
         'espacioId': '${espacio['id']}',
@@ -150,7 +127,9 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reservado: ${espacio['nombre']} · ${_hora(inicioElegido)}–${_hora(finElegido)}')),
+        SnackBar(
+          content: Text('Reservado: ${espacio['nombre']} · ${_hora(seleccion.$1)}–${_hora(seleccion.$2)}'),
+        ),
       );
       await _cargar();
     } on ApiException catch (error) {
@@ -159,7 +138,19 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     }
   }
 
-  Future<void> _cancelar(dynamic reserva) async {
+  Future<void> _cancelar(Map<String, dynamic> reserva) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        title: const Text('Cancelar reserva'),
+        content: Text('¿Cancelar la reserva de ${reserva['espacioNombre']}?'),
+        actions: [
+          OutlinedButton(onPressed: () => Navigator.of(contexto).pop(false), child: const Text('No')),
+          FilledButton(onPressed: () => Navigator.of(contexto).pop(true), child: const Text('Sí, cancelar')),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
     try {
       await ref.read(apiClientProvider).deleteJson('/reservaciones/${reserva['id']}');
       await _cargar();
@@ -169,10 +160,19 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     }
   }
 
+  void _cambiarSemana(int delta) {
+    setState(() {
+      _inicioSemana = _inicioSemana.add(Duration(days: 7 * delta));
+      _diaSeleccionado = _inicioSemana;
+    });
+    _cargar();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
     final dias = List<DateTime>.generate(7, (indice) => _inicioSemana.add(Duration(days: indice)));
+    final puedeRetroceder = _inicioSemana.isAfter(_lunesDe(_hoy));
 
     return Scaffold(
       appBar: AppBar(
@@ -188,15 +188,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
               children: [
                 IconButton(
                   tooltip: 'Semana anterior',
-                  onPressed: _inicioSemana.isAfter(_lunesDe(_hoy))
-                      ? () {
-                          setState(() {
-                            _inicioSemana = _inicioSemana.subtract(const Duration(days: 7));
-                            _diaSeleccionado = _inicioSemana;
-                          });
-                          _cargar();
-                        }
-                      : null,
+                  onPressed: puedeRetroceder ? () => _cambiarSemana(-1) : null,
                   icon: const Icon(Icons.chevron_left),
                 ),
                 Expanded(
@@ -208,13 +200,7 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                 ),
                 IconButton(
                   tooltip: 'Semana siguiente',
-                  onPressed: () {
-                    setState(() {
-                      _inicioSemana = _inicioSemana.add(const Duration(days: 7));
-                      _diaSeleccionado = _inicioSemana;
-                    });
-                    _cargar();
-                  },
+                  onPressed: () => _cambiarSemana(1),
                   icon: const Icon(Icons.chevron_right),
                 ),
               ],
@@ -240,11 +226,15 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
               ],
             ),
             const SizedBox(height: 16),
-            if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            if (_cargando)
+              const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
             if (_error != null)
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: colores.errorContainer, borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: colores.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(_error!),
               ),
             if (_mias.isNotEmpty) ...[
@@ -272,17 +262,18 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
               style: Theme.of(context).textTheme.titleSmall,
             ),
             const SizedBox(height: 8),
-            for (final espacio in _espacios) _tarjetaEspacio(espacio),
+            if (!_cargando && _error == null && _espacios.isEmpty)
+              const Text('No hay espacios configurados para reservar.'),
+            for (final espacio in _espacios) _tarjetaEspacio(context, espacio),
           ],
         ),
       ),
     );
   }
 
-  Widget _tarjetaEspacio(dynamic espacio) {
+  Widget _tarjetaEspacio(BuildContext context, Map<String, dynamic> espacio) {
     final ocupados = _ocupados('${espacio['id']}');
     final capacidad = (espacio['capacidad'] as num?)?.toInt() ?? 1;
-
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -298,16 +289,13 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                 Expanded(
                   child: Text('${espacio['nombre']}', style: const TextStyle(fontWeight: FontWeight.w600)),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: () => _reservar(espacio),
-                  child: const Text('Reservar'),
-                ),
+                FilledButton.tonal(onPressed: () => _reservar(espacio), child: const Text('Reservar')),
               ],
             ),
             const SizedBox(height: 6),
             if (ocupados.isEmpty)
-              Text('Libre todo el día (06:00–20:00)', style: TextStyle(color: Theme.of(context).colorScheme.primary))
+              Text('Libre todo el día (06:00–20:00)',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary))
             else
               Wrap(
                 spacing: 6,
@@ -329,8 +317,8 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
   String _rango(dynamic inicio, dynamic fin) {
     final desde = DateTime.tryParse('$inicio')?.toLocal();
     final hasta = DateTime.tryParse('$fin')?.toLocal();
-    if (desde == null || hasta == null) return '$inicio';
-    return '${_fechaCorta(desde)} ${_hora(desde.hour * 60 + desde.minute)}–${_hora(hasta.hour * 60 + hasta.minute)}';
+    if (desde == null || hasta == null) return 'Reserva';
+    return '${fechaCorta(desde)} ${_hora(desde.hour * 60 + desde.minute)}–${_hora(hasta.hour * 60 + hasta.minute)}';
   }
 
   String _fechaCorta(DateTime fecha) =>
@@ -367,8 +355,8 @@ class _BotonDia extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          height: 62,
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          height: 58,
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: esHoy ? colores.primary : colores.outlineVariant),
@@ -387,7 +375,7 @@ class _BotonDia extends StatelessWidget {
               Text(
                 '${dia.day}',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w700,
                   color: seleccionado ? colores.onPrimary : colores.onSurface,
                 ),
@@ -400,62 +388,107 @@ class _BotonDia extends StatelessWidget {
   }
 }
 
-/// Diálogo de selección de un minuto concreto (lista acotada, sin scrollables anidados).
-class _DialogoSeleccion extends StatelessWidget {
-  const _DialogoSeleccion({
-    required this.titulo,
-    required this.opciones,
-    required this.etiqueta,
-    required this.vacio,
+/// Hoja inferior con selección de hora de inicio y fin en una sola pantalla.
+class _HojaReserva extends StatefulWidget {
+  const _HojaReserva({
+    required this.espacioNombre,
+    required this.ocupados,
+    required this.apertura,
+    required this.cierre,
+    required this.paso,
+    required this.maximoMinutos,
+    required this.etiquetaHora,
   });
 
-  final String titulo;
-  final List<int> opciones;
-  final String Function(int) etiqueta;
-  final String vacio;
+  final String espacioNombre;
+  final List<(int, int)> ocupados;
+  final int apertura;
+  final int cierre;
+  final int paso;
+  final int maximoMinutos;
+  final String Function(int) etiquetaHora;
+
+  @override
+  State<_HojaReserva> createState() => _HojaReservaState();
+}
+
+class _HojaReservaState extends State<_HojaReserva> {
+  int? _inicio;
+
+  bool _choca(int desde, int hasta) =>
+      widget.ocupados.any((rango) => desde < rango.$2 && hasta > rango.$1);
+
+  List<int> get _inicios => [
+        for (var minuto = widget.apertura; minuto + widget.paso <= widget.cierre; minuto += widget.paso)
+          if (!_choca(minuto, minuto + widget.paso)) minuto,
+      ];
+
+  List<int> get _fines {
+    final inicio = _inicio;
+    if (inicio == null) return const [];
+    return [
+      for (var fin = inicio + widget.paso;
+          fin <= inicio + widget.maximoMinutos && fin <= widget.cierre;
+          fin += widget.paso)
+        if (!_choca(inicio, fin)) fin,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(titulo, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Flexible(
-                child: opciones.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Text(vacio),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: opciones.length,
-                        itemBuilder: (contexto, indice) {
-                          final minuto = opciones[indice];
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(etiqueta(minuto)),
-                            onTap: () => Navigator.of(contexto).pop(minuto),
-                          );
-                        },
+    final inicios = _inicios;
+    final fines = _fines;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Reservar ${widget.espacioNombre}', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            if (inicios.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No hay horas libres este día.'),
+              )
+            else ...[
+              DropdownButtonFormField<int>(
+                initialValue: _inicio,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Hora de inicio'),
+                items: [
+                  for (final minuto in inicios)
+                    DropdownMenuItem(value: minuto, child: Text(widget.etiquetaHora(minuto))),
+                ],
+                onChanged: (valor) => setState(() => _inicio = valor),
+              ),
+              const SizedBox(height: 10),
+              if (_inicio != null)
+                DropdownButtonFormField<int>(
+                  key: ValueKey(_inicio),
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Hora de fin (máx. 2 h)'),
+                  items: [
+                    for (final minuto in fines)
+                      DropdownMenuItem(
+                        value: minuto,
+                        child: Text(
+                          '${widget.etiquetaHora(minuto)} (${minuto - _inicio!} min)',
+                        ),
                       ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cerrar'),
+                  ],
+                  onChanged: (valor) {
+                    if (valor != null) Navigator.of(context).pop((_inicio!, valor));
+                  },
                 ),
-              ),
             ],
-          ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
+            ),
+          ],
         ),
       ),
     );

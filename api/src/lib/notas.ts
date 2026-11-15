@@ -11,6 +11,8 @@ export interface ActividadCalificada {
   notaMaxima: number;
   nota: number | null;
   retroalimentacion?: string | null;
+  /** Fecha de cierre de la actividad; se usa para decidir si la nota del corte es oficial. */
+  cierraEn?: string | null;
 }
 
 export interface CorteConActividades {

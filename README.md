@@ -6,6 +6,8 @@ datos son ficticios y no existe integración real con Génesis, U-Wallet ni torn
 
 Documento de arquitectura (fuente de verdad): [`docs/arquitectura.md`](docs/arquitectura.md).
 Decisiones no cubiertas por el documento: [`docs/DECISIONES.md`](docs/DECISIONES.md).
+Guion de la demo con credenciales y pruebas: [`docs/guia-demo.md`](docs/guia-demo.md).
+Pasos de publicación: [`docs/despliegue.md`](docs/despliegue.md).
 
 ## Estructura del monorepo
 
@@ -18,8 +20,10 @@ Decisiones no cubiertas por el documento: [`docs/DECISIONES.md`](docs/DECISIONES
 
 ## Requisitos
 
-- Flutter estable (probado con 3.41.9 / Dart 3.11.5)
+- Flutter estable (probado con 3.41.9 / Dart 3.11.5; en la PC de la demo, 3.50.0)
 - Node.js 22 LTS (probado con 22.23.5) y npm 10
+- Android SDK + JDK 17–21 para compilar el APK (`flutter build apk`); Gradle 8.14 del proyecto no
+  soporta Java 25, así que en la PC de la demo se configuró Temurin 21 con `flutter config --jdk-dir`
 - Docker Desktop para el datalake local (MinIO en 9000/9001)
 - Proyecto Firebase con Authentication (correo/contraseña) y su cuenta de servicio en
   `api/config/firebase-service-account.json` (carpeta ignorada por git)
@@ -116,26 +120,27 @@ La clave privada institucional nunca sale del backend; la app del validador solo
 
 | Endpoint | Quién | Qué hace |
 |---|---|---|
-| `GET /api/v1/aulas` · `GET /api/v1/aulas/{id}` | miembros o admin | Aulas, unidades, contenidos y actividades (tarea, cuestionario, foro) |
-| `GET /api/v1/mis-notas` | estudiante | Notas por corte y actividad con pesos y definitiva |
+| `GET /api/v1/aulas` · `GET /api/v1/aulas/{id}` | miembros o admin | Aulas, unidades, contenidos y actividades; incluye docente y rol del usuario en el aula |
+| `GET /api/v1/aulas/{id}/participantes` | miembros del aula | Compañeros y docente con correo para escribirles |
+| `GET /api/v1/mis-actividades/proximas` | estudiante o docente | Actividades próximas a vencer con curso y estado de entrega |
+| `GET /api/v1/mis-notas` · `GET /api/v1/aulas/{id}/mis-calificaciones` | estudiante | Notas por corte/actividad; la definitiva se publica cuando cierran los cortes (D-80) |
 | `POST /api/v1/entregas` | estudiante | Entrega idempotente por UUID de cliente (ENVIADA/TARDIA con gracia de 24 h) |
-| `GET /api/v1/actividades/{id}/entregas` | docente del grupo | Entregas con estudiante, texto, estado, inscripción y nota |
+| `GET /api/v1/actividades/{id}/mi-entrega` | estudiante | Estado de la entrega propia (para no duplicar) |
+| `GET /api/v1/actividades/{id}/entregas` | docente del grupo | Entregas con estudiante, texto, adjuntos, estado y nota |
 | `GET /api/v1/cuestionarios/{id}` · `POST /api/v1/cuestionarios/{id}/intentos` | estudiante | Preguntas sin respuesta correcta e intento único autocalificado |
 | `GET /api/v1/cuestionarios/{id}/intentos` | docente del grupo | Revisión de intentos (puntaje y respuestas, D-69) |
-| `POST /api/v1/archivos/subida` · `GET /api/v1/archivos/{id}/url` | autenticado | URL prefirmada PUT/GET del datalake (10/15 min, máximo 50 MB) |
+| `POST /api/v1/archivos/subida` · `GET /api/v1/archivos/{id}/url` · `GET /api/v1/archivos/por-clave/url` | autenticado | URLs prefirmadas PUT/GET del datalake (10/15 min, máximo 50 MB) |
 | `PUT /api/v1/calificaciones` | docente del grupo | Califica en una transacción: upsert, nota del corte, auditoría y aviso (D-68) |
 | `GET /api/v1/aulas/{id}/calificaciones` | docente del grupo | Matriz estudiante × actividad para calificar |
+| `POST/PUT/DELETE /api/v1/aulas/{id}/unidades` · `…/unidades/{id}/contenidos` · `…/unidades/{id}/actividades` | docente del aula | Edición del curso: unidades, contenidos (con archivo) y actividades con formatos y fecha de cierre |
+| `GET/POST /api/v1/aulas/{id}/anuncios` | miembros / docente | Anuncios del aula (servidos por la API sobre Firestore, D-78) |
+| `GET/POST /api/v1/foros/{id}/hilos` · `…/hilos/{hiloId}/mensajes` | miembros del aula | Foros e hilos por actividad, con mensajes (D-47, D-78) |
 | `POST /api/v1/anuncios/{id}/replicar-correo` | docente del aula | Correo simulado por estudiante (idempotente por anuncio, D-48) |
 | `GET /api/v1/correos-simulados` | autenticado | Bandeja simulada propia |
 
-Foros y anuncios viven en **Cloud Firestore** (D-47, D-48): cada actividad tipo `FORO` tiene su
-foro (`foros/{actividadId}/hilos`), los anuncios en `anuncios/{aulaId}/items` y la app los escucha
-en tiempo real. La semilla escribe el espejo `aulas_index/{aulaId}` (`miembros` y `docentes`) con
-el Admin SDK, que es lo que leen las reglas de seguridad.
-
-Las reglas se despliegan con `npm run rules:deploy` (usa la cuenta de servicio y la API REST de
-Firebase Rules, D-65); `firebase deploy --only firestore:rules --config infra/firebase/firebase.json`
-sigue siendo válido.
+Foros y anuncios viven en **Cloud Firestore** (D-47, D-48) pero la app los lee y escribe a través de
+la **API**, que valida la pertenencia al aula en SQL y usa el Admin SDK (D-78); la semilla mantiene los
+espejos `aulas_index` y `foros_index`. Las reglas se despliegan con `npm run rules:deploy` (D-65).
 
 ## Horarios, módulo académico y evaluación docente (Fase 4)
 
@@ -171,6 +176,23 @@ En la app, el inicio muestra el panel según el rol activo: **Administración ac
 Académico), **Espacios y horarios** (Admin de Espacios), **Gestión de incidencias** (Soporte),
 **Auditoría** (Auditor) e **Incidencias** para el resto de roles. Los códigos de error de integridad
 (borrar algo con registros asociados, duplicados) se traducen a `409 CONFLICTO`.
+
+## Cierre y demo pública (Fase 6)
+
+- **PWA**: `app/web/manifest.json` declara `standalone`/`portrait`, colores institucionales e íconos
+  192/512 y *maskable*; el launcher Android usa los mismos íconos generados con el estilo de la app
+  (sin logotipos oficiales). El `index.html` incluye metadatos de PWA, tema y `apple-touch-icon`.
+- **Build web**: `cd app && flutter build web --release --dart-define-from-file=env/prod.json`
+  → salida en `app/build/web` (no versionada).
+- **APK**: `cd app && flutter build apk --release --dart-define-from-file=env/prod.json`
+  → `app/build/app/outputs/flutter-apk/app-release.apk`.
+- **Despliegue preparado** (pendiente solo de credenciales): [`render.yaml`](render.yaml) para la API
+  en Render, [`firebase.json`](firebase.json) + [`.firebaserc`](.firebaserc) para Firebase Hosting y
+  [`infra/r2/cors.json`](infra/r2/cors.json) para el datalake en Cloudflare R2. Los pasos completos,
+  variables de entorno y el checklist post-despliegue están en
+  [`docs/despliegue.md`](docs/despliegue.md).
+- **Demo reproducible**: credenciales, recorrido por fases y solución de problemas en
+  [`docs/guia-demo.md`](docs/guia-demo.md).
 
 ## Pruebas
 
@@ -212,4 +234,4 @@ firebase deploy --only firestore:rules,firestore:indexes --config infra/firebase
 | 3 — Aulas virtuales y calificaciones | ✅ completada (2026-11-14) |
 | 4 — Horarios y módulo académico | ✅ completada (2026-11-14) |
 | 5 — Panel administrativo y auditoría | ✅ completada (2026-11-14) |
-| 6 — Cierre y demo pública | pendiente |
+| 6 — Cierre y demo pública | 🟡 local completo (2026-11-14); despliegue público pendiente de credenciales |

@@ -1,22 +1,21 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reglas de Firestore v2 — Uniminuto Campus App (§4.4, §5, D-47, D-57 y D-65).
+// Reglas de Firestore v3 — Uniminuto Campus App (§4.4, §5, D-47, D-57, D-78).
 //
 // Colecciones y quién escribe:
 //   aulas_index/{aulaId}                        solo la API (Admin SDK) — espejo para estas reglas
+//   foros_index/{foroId}                        solo la API (Admin SDK) — miembros/docentes del aula
 //   foros/{foroId}/hilos/{hiloId}               miembros del aula dueña del foro
 //   foros/{foroId}/hilos/{hiloId}/mensajes/*    miembros del aula dueña del foro
 //   anuncios/{aulaId}/items/{id}                docentes del aula
 //   notificaciones/{uid}/items/{id}             la API (el dueño solo marca `leida`)
 //   colas_entregas/{uid}/items/{entregaId}      el dueño
 //
-// `foroId` = `actividad_id` (D-47): cada actividad tipo FORO tiene su hilo. Como el id del foro
-// no es el del aula, los documentos llevan `aula_id` y las reglas comprueban la membresía con ese
-// campo contra `aulas_index/{aula_id}` (la API mantiene el espejo desde la Fase 3).
-//
-// `aulas_index` guarda `miembros: [uid]` y `docentes: [uid]`; se mantiene desde la API porque el
-// cliente no puede leer la base SQL donde viven inscripciones y docentes.
+// `foroId` = `actividad_id` (D-47). Las reglas de **listas** (queries) no pueden depender de
+// `resource.data` porque Firestore evalúa la regla contra el conjunto posible de resultados; por
+// eso la membresía del foro se resuelve con el espejo `foros_index/{foroId}` (D-78), que la API
+// mantiene al crear/eliminar una actividad tipo FORO.
 // ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -40,30 +39,46 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/aulas_index/$(aulaId)).data.docentes;
     }
 
-    // ── Espejo de aulas: lectura para miembros, escritura solo Admin SDK ────
+    // Membresía de un foro usando solo el id del foro (válido para consultas de lista).
+    function esMiembroForo(foroId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/foros_index/$(foroId))
+        && (request.auth.uid in get(/databases/$(database)/documents/foros_index/$(foroId)).data.miembros
+            || request.auth.uid in get(/databases/$(database)/documents/foros_index/$(foroId)).data.docentes);
+    }
+
+    function esDocenteForo(foroId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/foros_index/$(foroId))
+        && request.auth.uid in get(/databases/$(database)/documents/foros_index/$(foroId)).data.docentes;
+    }
+
+    // ── Espejos de aula y de foro: lectura para miembros, escritura solo Admin SDK ──
     match /aulas_index/{aulaId} {
       allow read: if esMiembro(aulaId) || esDocente(aulaId);
       allow write: if false;
     }
 
+    match /foros_index/{foroId} {
+      allow read: if esMiembroForo(foroId);
+      allow write: if false;
+    }
+
     // ── Foros: un foro por actividad (foroId = actividad_id, D-47) ──────────
     match /foros/{foroId}/hilos/{hiloId} {
-      allow read: if esMiembro(resource.data.aula_id);
-      allow create: if esMiembro(request.resource.data.aula_id)
+      allow read: if esMiembroForo(foroId);
+      allow create: if esMiembroForo(foroId)
         && request.resource.data.autor_uid == request.auth.uid
         && request.resource.data.foro_id == foroId;
-      allow update, delete: if esMiembro(resource.data.aula_id)
-        && (resource.data.autor_uid == request.auth.uid || esDocente(resource.data.aula_id));
+      allow update, delete: if esMiembroForo(foroId)
+        && (resource.data.autor_uid == request.auth.uid || esDocenteForo(foroId));
 
       match /mensajes/{mensajeId} {
-        allow read: if esMiembro(resource.data.aula_id);
-        allow create: if esMiembro(request.resource.data.aula_id)
-          && request.resource.data.autor_uid == request.auth.uid
-          // El mensaje no puede cambiar de aula respecto al hilo que lo contiene.
-          && request.resource.data.aula_id
-            == get(/databases/$(database)/documents/foros/$(foroId)/hilos/$(hiloId)).data.aula_id;
-        allow update, delete: if esMiembro(resource.data.aula_id)
-          && (resource.data.autor_uid == request.auth.uid || esDocente(resource.data.aula_id));
+        allow read: if esMiembroForo(foroId);
+        allow create: if esMiembroForo(foroId)
+          && request.resource.data.autor_uid == request.auth.uid;
+        allow update, delete: if esMiembroForo(foroId)
+          && (resource.data.autor_uid == request.auth.uid || esDocenteForo(foroId));
       }
     }
 
@@ -78,7 +93,6 @@ service cloud.firestore {
     // ── Notificaciones: cada usuario solo ve su árbol ───────────────────────
     match /notificaciones/{uid}/items/{notificacionId} {
       allow read: if autenticado() && request.auth.uid == uid;
-      // La API crea las notificaciones (Admin SDK); el dueño solo puede marcarlas como leídas.
       allow update: if autenticado() && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leida']);
       allow create, delete: if false;

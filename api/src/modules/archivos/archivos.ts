@@ -118,4 +118,25 @@ export function registrarRutasArchivos(
       expiraEn: new Date(Date.now() + 15 * 60_000).toISOString(),
     };
   });
+
+  /**
+   * Firma una URL de lectura a partir de la clave del objeto (la que guardan `contenido`,
+   * adjuntos de entregas y la foto de perfil). Es una simplificación de la muestra: cualquier
+   * usuario autenticado puede leer objetos de `aulas/`, `foros/`, `entregas/` y `perfiles/`;
+   * los binarios nunca son públicos (URL firmada de 15 minutos, §6.3).
+   */
+  app.get('/api/v1/archivos/por-clave/url', { preHandler: app.autenticar }, async (peticion) => {
+    const { objetoKey } = z
+      .object({
+        objetoKey: z
+          .string()
+          .trim()
+          .min(3)
+          .max(300)
+          .regex(/^(aulas|foros|entregas|perfiles)\/[\w./-]+$/),
+      })
+      .parse(peticion.query ?? {});
+    const url = await urlLectura(s3, env.S3_BUCKET, objetoKey);
+    return { url, expiraEn: new Date(Date.now() + 15 * 60_000).toISOString() };
+  });
 }

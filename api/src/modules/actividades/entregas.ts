@@ -17,6 +17,7 @@ export interface EntregaListada {
   id: string;
   estudiante: string;
   texto: string | null;
+  adjuntos: unknown[];
   creadaEnCliente: string;
   recibidaEnServidor: string;
   estado: string;
@@ -36,6 +37,8 @@ export interface RepositorioEntregas {
     },
   ): Promise<EntregaCreada>;
   listarPorActividad(uidFirebase: string, actividadId: string): Promise<EntregaListada[]>;
+  /** Entrega propia del estudiante en la actividad (o `null` si aún no existe). */
+  miEntrega(uidFirebase: string, actividadId: string): Promise<EntregaListada | null>;
 }
 
 const esquemaEntrega = z
@@ -131,8 +134,7 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
       });
     },
 
-    async listarPorActividad(uidFirebase, actividadId) {
-      const acceso = await pool.query<{ id: string }>(
+    async listarPorActividad(uidFirebase, actividadId) {      const acceso = await pool.query<{ id: string }>(
         `SELECT a.id FROM actividad a
          JOIN unidad un ON un.id = a.unidad_id
          JOIN aula au ON au.id = un.aula_id
@@ -147,13 +149,14 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         id: string;
         estudiante: string;
         texto: string | null;
+        adjuntos: unknown;
         creada_en_cliente: string | Date;
         recibida_en_servidor: string | Date;
         estado: string;
         inscripcion_id: string;
         nota: string | null;
       }>(
-        `SELECT e.id, u.nombres || ' ' || u.apellidos AS estudiante, e.texto,
+        `SELECT e.id, u.nombres || ' ' || u.apellidos AS estudiante, e.texto, e.adjuntos,
                 e.creada_en_cliente, e.recibida_en_servidor, e.estado,
                 i.id AS inscripcion_id, c.nota
          FROM entrega e
@@ -169,12 +172,53 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         id: fila.id,
         estudiante: fila.estudiante,
         texto: fila.texto,
+        adjuntos: Array.isArray(fila.adjuntos) ? fila.adjuntos : [],
         creadaEnCliente: iso(fila.creada_en_cliente),
         recibidaEnServidor: iso(fila.recibida_en_servidor),
         estado: fila.estado,
         inscripcionId: fila.inscripcion_id,
         nota: fila.nota === null ? null : Number(fila.nota),
       }));
+    },
+
+    async miEntrega(uidFirebase, actividadId) {
+      const resultado = await pool.query<{
+        id: string;
+        estudiante: string;
+        texto: string | null;
+        adjuntos: unknown;
+        creada_en_cliente: string | Date;
+        recibida_en_servidor: string | Date;
+        estado: string;
+        inscripcion_id: string;
+        nota: string | null;
+      }>(
+        `SELECT e.id, u.nombres || ' ' || u.apellidos AS estudiante, e.texto, e.adjuntos,
+                e.creada_en_cliente, e.recibida_en_servidor, e.estado,
+                i.id AS inscripcion_id, c.nota
+         FROM entrega e
+         JOIN usuario u ON u.id = e.estudiante_id
+         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id
+         LEFT JOIN calificacion c ON c.actividad_id = e.actividad_id AND c.inscripcion_id = i.id
+         WHERE e.actividad_id = $1 AND u.uid_firebase = $2
+         ORDER BY e.recibida_en_servidor DESC LIMIT 1`,
+        [actividadId, uidFirebase],
+      );
+      const fila = resultado.rows[0];
+      if (!fila) return null;
+      const iso = (valor: string | Date) =>
+        (valor instanceof Date ? valor : new Date(valor)).toISOString();
+      return {
+        id: fila.id,
+        estudiante: fila.estudiante,
+        texto: fila.texto,
+        adjuntos: Array.isArray(fila.adjuntos) ? fila.adjuntos : [],
+        creadaEnCliente: iso(fila.creada_en_cliente),
+        recibidaEnServidor: iso(fila.recibida_en_servidor),
+        estado: fila.estado,
+        inscripcionId: fila.inscripcion_id,
+        nota: fila.nota === null ? null : Number(fila.nota),
+      };
     },
   };
 }
@@ -195,5 +239,11 @@ export function registrarRutasEntregas(app: FastifyInstance, repo: RepositorioEn
   app.get('/api/v1/actividades/:id/entregas', { preHandler: app.autenticar }, async (peticion) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(peticion.params);
     return repo.listarPorActividad(peticion.actor!.uid, id);
+  });
+
+  // Estado de la entrega del propio estudiante (para que la pantalla de la tarea no duplique).
+  app.get('/api/v1/actividades/:id/mi-entrega', { preHandler: app.autenticar }, async (peticion) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(peticion.params);
+    return repo.miEntrega(peticion.actor!.uid, id);
   });
 }

@@ -8,6 +8,9 @@ import '../../../core/widgets/aviso_muestra.dart';
 import '../data/auth_repository.dart';
 
 /// Pantalla de acceso con Firebase Authentication (correo + contraseña, §3.2).
+///
+/// Los mensajes de error son siempre genéricos: no se valida la longitud de la contraseña antes
+/// de enviar ni se distingue entre correo inexistente y contraseña incorrecta.
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -17,8 +20,8 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _correo = TextEditingController(text: AppConfig.esProduccion ? '' : 'juan.rojas@demo.uniminuto.test');
-  final _contrasena = TextEditingController(text: AppConfig.esProduccion ? '' : 'Demo1234*');
+  final _correo = TextEditingController();
+  final _contrasena = TextEditingController();
   bool _ocultarContrasena = true;
   bool _enviando = false;
   String? _error;
@@ -42,7 +45,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } on ErrorAutenticacion catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
     } catch (_) {
-      if (mounted) setState(() => _error = 'No se pudo iniciar sesión. Inténtalo de nuevo.');
+      if (mounted) setState(() => _error = 'Correo o contraseña incorrectos.');
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -98,16 +101,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           controller: _correo,
                           enabled: !_enviando,
                           keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
                           autofillHints: const [AutofillHints.email],
                           decoration: const InputDecoration(
                             labelText: 'Correo institucional',
                             prefixIcon: Icon(Icons.alternate_email),
                           ),
-                          validator: (valor) {
-                            final texto = (valor ?? '').trim();
-                            if (texto.isEmpty || !texto.contains('@')) return 'Escribe un correo válido';
-                            return null;
-                          },
+                          validator: (valor) =>
+                              (valor ?? '').trim().isEmpty ? 'Escribe tu correo institucional' : null,
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -127,7 +128,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ),
                           ),
                           validator: (valor) =>
-                              (valor == null || valor.length < 8) ? 'Mínimo 8 caracteres' : null,
+                              (valor == null || valor.isEmpty) ? 'Escribe tu contraseña' : null,
                           onFieldSubmitted: (_) => _ingresar(),
                         ),
                       ],
@@ -135,10 +136,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(color: colores.error),
-                      textAlign: TextAlign.center,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colores.errorContainer.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(_error!, style: TextStyle(color: colores.onErrorContainer)),
                     ),
                   ],
                   const SizedBox(height: 16),
@@ -152,26 +156,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           )
                         : const Text('Iniciar sesión'),
                   ),
-                  if (!AppConfig.esProduccion) ...[
-                    const SizedBox(height: 20),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Cuentas de demostración', style: Theme.of(context).textTheme.labelLarge),
-                            const SizedBox(height: 6),
-                            Text(
-                              'juan.rojas@demo.uniminuto.test · Docente: carolina.pena@demo.uniminuto.test\n'
-                              'Seguridad: jorge.salazar@demo.uniminuto.test · Contraseña: Demo1234*',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

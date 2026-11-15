@@ -65,26 +65,22 @@ class AuthRepository {
     }
   }
 
+  /// Mensajes deliberadamente genéricos: no revelan si el correo existe, si la contraseña
+  /// tiene cierta longitud ni cuál de los dos datos falló (§8, tratamiento de datos).
   String _mensajeDeError(String codigo) {
     switch (codigo) {
-      case 'invalid-email':
-        return 'El correo no tiene un formato válido.';
       case 'user-disabled':
-        return 'Esta cuenta está deshabilitada.';
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'Correo o contraseña incorrectos.';
+        return 'No fue posible iniciar sesión. Contacta a la oficina de registro.';
       case 'too-many-requests':
         return 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
       case 'network-request-failed':
-        return 'No hay conexión con Firebase. Revisa tu red.';
-      case 'weak-password':
-        return 'La nueva contraseña es demasiado débil (mínimo 8 caracteres).';
+        return 'No hay conexión con el servicio de acceso. Revisa tu red.';
       case 'requires-recent-login':
         return 'Por seguridad, vuelve a iniciar sesión antes de cambiar la contraseña.';
+      case 'weak-password':
+        return 'La nueva contraseña no cumple los requisitos de seguridad.';
       default:
-        return 'No se pudo completar la operación ($codigo).';
+        return 'Correo o contraseña incorrectos.';
     }
   }
 }

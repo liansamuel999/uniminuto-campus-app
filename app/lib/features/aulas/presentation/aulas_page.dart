@@ -3,14 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
-import '../../../core/session/session_controller.dart';
-import 'tarea_page.dart';
-import 'cuestionario_page.dart';
-import 'foro_page.dart';
-import 'anuncios_page.dart';
-import 'calificar_page.dart';
+import '../../../core/utils/formato.dart';
+import 'aula_detalle_page.dart';
 
-/// Lista de aulas virtuales del usuario (estudiante, docente o admin académico).
+/// Lista de cursos del usuario con la sección «Próximas entregas» al inicio.
 class AulasPage extends ConsumerStatefulWidget {
   const AulasPage({super.key});
 
@@ -19,7 +15,8 @@ class AulasPage extends ConsumerStatefulWidget {
 }
 
 class _AulasPageState extends ConsumerState<AulasPage> {
-  List<dynamic> _aulas = const [];
+  List<Map<String, dynamic>> _aulas = const [];
+  List<Map<String, dynamic>> _proximas = const [];
   bool _cargando = true;
   String? _error;
 
@@ -35,17 +32,28 @@ class _AulasPageState extends ConsumerState<AulasPage> {
       _error = null;
     });
     try {
-      final aulas = await ref.read(apiClientProvider).getList('/aulas');
-      if (mounted) setState(() => _aulas = aulas);
+      final repo = ref.read(repositorioAcademicoProvider);
+      final resultados = await Future.wait([repo.aulas(), repo.proximasActividades()]);
+      if (!mounted) return;
+      setState(() {
+        _aulas = _mapas(resultados[0]);
+        _proximas = _mapas(resultados[1]).take(6).toList();
+      });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudieron cargar las aulas.');
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
   }
 
+  static List<Map<String, dynamic>> _mapas(List<dynamic> datos) =>
+      datos.whereType<Map>().map((fila) => Map<String, dynamic>.from(fila)).toList();
+
   @override
   Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Aulas virtuales'),
@@ -56,202 +64,96 @@ class _AulasPageState extends ConsumerState<AulasPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            if (_cargando)
+              const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
             if (_error != null)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
+                  color: colores.errorContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(_error!),
               ),
-            if (!_cargando && _aulas.isEmpty) const Text('No tienes aulas asignadas todavía.'),
-            for (final aula in _aulas)
-              Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  leading: const Icon(Icons.school_outlined),
-                  title: Text('${aula['asignatura']}'),
-                  subtitle: Text('${aula['codigo']} · Grupo ${aula['grupo']} · ${aula['periodo']}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => AulaDetallePage(
-                        aulaId: '${aula['id']}',
-                        titulo: '${aula['asignatura']}',
-                      ),
-                    ),
-                  ),
-                ),
+            if (_proximas.isNotEmpty) ...[
+              Text(
+                'Próximas entregas',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
+              const SizedBox(height: 8),
+              for (final actividad in _proximas) _tarjetaProxima(context, actividad),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              'Mis cursos',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            if (!_cargando && _aulas.isEmpty) const Text('No tienes cursos asignados.'),
+            for (final aula in _aulas) _tarjetaAula(context, aula),
           ],
         ),
       ),
     );
   }
-}
 
-/// Detalle del aula: unidades, contenidos y actividades.
-class AulaDetallePage extends ConsumerStatefulWidget {
-  const AulaDetallePage({super.key, required this.aulaId, required this.titulo});
-
-  final String aulaId;
-  final String titulo;
-
-  @override
-  ConsumerState<AulaDetallePage> createState() => _AulaDetallePageState();
-}
-
-class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
-  Map<String, dynamic>? _detalle;
-  bool _cargando = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _cargar();
-  }
-
-  Future<void> _cargar() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
-    try {
-      final detalle = await ref.read(apiClientProvider).getJson('/aulas/${widget.aulaId}');
-      if (mounted) setState(() => _detalle = detalle);
-    } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.mensaje);
-    } finally {
-      if (mounted) setState(() => _cargando = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final unidades = (_detalle?['unidades'] as List<dynamic>? ?? const []);
-    final roles = ref.watch(sesionProvider).valueOrNull?.roles ?? const <String>[];
-    final esDocente = roles.contains('DOCENTE') || roles.contains('ADMIN_ACADEMICO');
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.titulo),
-        actions: [
-          IconButton(
-            tooltip: 'Anuncios del aula',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AnunciosPage(aulaId: widget.aulaId, puedePublicar: esDocente),
-              ),
+  Widget _tarjetaProxima(BuildContext context, Map<String, dynamic> actividad) {
+    final cierre = DateTime.tryParse('${actividad['cierraEn']}');
+    final tipo = '${actividad['tipo']}';
+    final entregada = actividad['entregada'] == true;
+    final colores = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(switch (tipo) {
+          'TAREA' => Icons.assignment_outlined,
+          'CUESTIONARIO' => Icons.quiz_outlined,
+          _ => Icons.forum_outlined,
+        }, color: colores.primary),
+        title: Text('${actividad['titulo']}'),
+        subtitle: Text(
+          '${actividad['asignatura']} · ${cierre == null ? 'sin fecha límite' : 'vence en ${tiempoRestante(cierre)}'}'
+          '${entregada ? ' · entregada' : ''}',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AulaDetallePage(
+              aulaId: '${actividad['aulaId']}',
+              titulo: '${actividad['asignatura']}',
+              actividadInicialId: '${actividad['actividadId']}',
             ),
-            icon: const Icon(Icons.campaign_outlined),
           ),
-          if (esDocente)
-            IconButton(
-              tooltip: 'Calificar entregas y revisar intentos',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => CalificarPage(aulaId: widget.aulaId),
-                ),
-              ),
-              icon: const Icon(Icons.grading_outlined),
-            ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
-          if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          for (final unidad in unidades)
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ExpansionTile(
-                initiallyExpanded: true,
-                leading: CircleAvatar(child: Text('${unidad['numero']}')),
-                title: Text('${unidad['titulo']}'),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                children: [
-                  for (final contenido in (unidad['contenidos'] as List<dynamic>? ?? const []))
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(_iconoContenido('${contenido['tipo']}')),
-                      title: Text('${contenido['titulo']}'),
-                      subtitle: Text('${contenido['tipo']}'),
-                    ),
-                  const Divider(),
-                  for (final actividad in (unidad['actividades'] as List<dynamic>? ?? const []))
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(_iconoActividad('${actividad['tipo']}')),
-                      title: Text('${actividad['titulo']}'),
-                      subtitle: Text(
-                        '${actividad['tipo']} · ${actividad['peso']}% del corte ${actividad['corte']}'
-                        '${actividad['cierraEn'] != null ? ' · cierra ${_fecha(actividad['cierraEn'])}' : ''}',
-                      ),
-                      trailing: actividad['tipo'] == 'TAREA' ||
-                              actividad['tipo'] == 'CUESTIONARIO' ||
-                              actividad['tipo'] == 'FORO'
-                          ? const Icon(Icons.chevron_right)
-                          : null,
-                      onTap: actividad['tipo'] == 'TAREA'
-                          ? () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => TareaPage(
-                                    actividad: Map<String, dynamic>.from(actividad as Map),
-                                  ),
-                                ),
-                              )
-                          : actividad['tipo'] == 'CUESTIONARIO'
-                              ? () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => CuestionarioPage(
-                                        actividadId: '${actividad['id']}',
-                                        titulo: '${actividad['titulo']}',
-                                      ),
-                                    ),
-                                  )
-                              : actividad['tipo'] == 'FORO'
-                                  ? () => Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => ForoPage(
-                                            foroId: '${actividad['id']}',
-                                            aulaId: widget.aulaId,
-                                            titulo: '${actividad['titulo']}',
-                                          ),
-                                        ),
-                                      )
-                                  : null,
-                    ),
-                ],
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
 
-  IconData _iconoContenido(String tipo) => switch (tipo) {
-        'PDF' => Icons.picture_as_pdf_outlined,
-        'VIDEO' => Icons.play_circle_outline,
-        'ENLACE' => Icons.link,
-        _ => Icons.campaign_outlined,
-      };
-
-  IconData _iconoActividad(String tipo) => switch (tipo) {
-        'TAREA' => Icons.assignment_outlined,
-        'CUESTIONARIO' => Icons.quiz_outlined,
-        _ => Icons.forum_outlined,
-      };
-
-  String _fecha(dynamic valor) {
-    final fecha = DateTime.tryParse('$valor')?.toLocal();
-    if (fecha == null) return '$valor';
-    return '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')} '
-        '${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+  Widget _tarjetaAula(BuildContext context, Map<String, dynamic> aula) {
+    final colores = Theme.of(context).colorScheme;
+    final esDocente = '${aula['rolEnAula']}' == 'DOCENTE';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: colores.primaryContainer,
+          child: Icon(Icons.school_outlined, color: colores.onPrimaryContainer),
+        ),
+        title: Text('${aula['asignatura']}'),
+        subtitle: Text(
+          '${aula['codigo']} · Grupo ${aula['grupo']} · ${aula['periodo']}\n'
+          'Docente: ${aula['docente'] ?? 'Sin asignar'}',
+        ),
+        isThreeLine: true,
+        trailing: esDocente
+            ? const Chip(label: Text('Docente'), visualDensity: VisualDensity.compact)
+            : const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AulaDetallePage(aulaId: '${aula['id']}', titulo: '${aula['asignatura']}'),
+          ),
+        ),
+      ),
+    );
   }
 }

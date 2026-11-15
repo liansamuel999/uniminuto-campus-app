@@ -6,63 +6,70 @@ import '../../../core/session/session_controller.dart';
 import '../../../core/widgets/aviso_muestra.dart';
 
 class _Acceso {
-  const _Acceso(this.titulo, this.descripcion, this.icono, this.ruta, this.fase);
+  const _Acceso(this.titulo, this.icono, this.ruta);
 
   final String titulo;
-  final String descripcion;
   final IconData icono;
-  final String? ruta;
-  final String fase;
+  final String ruta;
 }
 
-/// Pantalla de inicio con los accesos a los módulos del rol activo.
+/// Inicio con accesos rápidos **distintos por rol**; en móvil solo se muestra el título.
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
-  static const List<_Acceso> _accesosBase = <_Acceso>[
-    _Acceso('Carnet digital', 'QR dinámico, código de barras y dispositivo vinculado.', Icons.badge_outlined, '/carnet', 'Fase 2'),
-    _Acceso('Aulas virtuales', 'Contenidos, tareas, foros y anuncios de tus asignaturas.', Icons.school_outlined, '/aulas', 'Fase 3'),
-    _Acceso('Bandeja simulada', 'Correos replicados de los anuncios importantes.', Icons.mark_email_unread_outlined, '/correos', 'Fase 3'),
-    _Acceso('Mis notas', 'Definitiva, cortes y detalle por actividad.', Icons.grading_outlined, '/notas', 'Fase 3'),
-    _Acceso('Horario', 'Clases de la semana con salón y edificio.', Icons.calendar_month_outlined, '/horario', 'Fase 4'),
-    _Acceso('Asignaturas', 'Inscritas, docente y evaluación docente.', Icons.menu_book_outlined, '/asignaturas', 'Fase 4'),
-    _Acceso('Campus', 'Edificios, pisos y salones de la sede.', Icons.apartment_outlined, '/campus', 'Fase 4'),
-    _Acceso('Reservas', 'Cabinas y salas de autorecreación por hora.', Icons.event_seat_outlined, '/reservas', 'Nueva'),
-    _Acceso('Perfil', 'Datos de la cuenta, roles y cambio de contraseña.', Icons.person_outline, '/perfil', 'Fase 1'),
-  ];
-
-  /// Accesos por rol: los paneles administrativos solo aparecen para su rol (§5).
   static List<_Acceso> _accesosPara(String? rol) {
-    final accesos = List<_Acceso>.from(_accesosBase);
-    if (rol == 'ADMIN_ACADEMICO') {
-      accesos.insert(
-        0,
-        const _Acceso('Administración académica', 'Periodos, asignaturas, grupos, inscripciones y docentes.', Icons.admin_panel_settings_outlined, '/admin-academico', 'Fase 5'),
-      );
+    const aulas = _Acceso('Aulas virtuales', Icons.school_outlined, '/aulas');
+    const horario = _Acceso('Horario', Icons.calendar_month_outlined, '/horario');
+    const notas = _Acceso('Mis notas', Icons.grading_outlined, '/notas');
+    const asignaturas = _Acceso('Mis asignaturas', Icons.menu_book_outlined, '/asignaturas');
+    const bandeja = _Acceso('Bandeja simulada', Icons.mark_email_unread_outlined, '/correos');
+    const reservas = _Acceso('Reservas', Icons.event_seat_outlined, '/reservas');
+    const incidencias = _Acceso('Incidencias', Icons.report_outlined, '/incidencias');
+    const perfil = _Acceso('Mi perfil', Icons.person_outline, '/perfil');
+    const adminAcademico = _Acceso(
+      'Administración académica',
+      Icons.admin_panel_settings_outlined,
+      '/admin-academico',
+    );
+    const adminEspacios = _Acceso('Espacios y horarios', Icons.domain_outlined, '/admin-espacios');
+    const gestionIncidencias = _Acceso('Gestión de incidencias', Icons.support_agent_outlined, '/incidencias');
+    const auditoria = _Acceso('Auditoría', Icons.shield_outlined, '/auditoria');
+
+    switch (rol) {
+      case 'DOCENTE':
+        return [aulas, horario, asignaturas, notas, bandeja, incidencias, perfil];
+      case 'ADMIN_ACADEMICO':
+        return [adminAcademico, incidencias, perfil];
+      case 'ADMIN_ESPACIOS':
+        return [adminEspacios, incidencias, perfil];
+      case 'SOPORTE':
+        return [gestionIncidencias, perfil];
+      case 'AUDITOR':
+        return [auditoria, perfil];
+      case 'SEGURIDAD':
+        return [incidencias, perfil];
+      default:
+        // Estudiante: primero lo que más usa (aulas y horario), bandeja después.
+        return [aulas, horario, notas, asignaturas, bandeja, reservas, incidencias, perfil];
     }
-    if (rol == 'ADMIN_ESPACIOS') {
-      accesos.insert(
-        0,
-        const _Acceso('Espacios y horarios', 'Edificios, pisos, salones y asignación de horarios.', Icons.domain_outlined, '/admin-espacios', 'Fase 5'),
-      );
+  }
+
+  String _subtitulo(Sesion? sesion, String? rol) {
+    if (sesion == null) return '';
+    if (sesion.roles.contains('ESTUDIANTE')) {
+      final programa = sesion.perfil.programa?.nombre ?? 'Sin programa';
+      final codigo = sesion.perfil.codigoInstitucional ?? 'Sin código';
+      return '$programa · $codigo';
     }
-    if (rol == 'AUDITOR') {
-      accesos.insert(
-        0,
-        const _Acceso('Auditoría', 'Bitácora de eventos de solo lectura con filtros.', Icons.shield_outlined, '/auditoria', 'Fase 5'),
-      );
-    }
-    if (rol == 'SOPORTE') {
-      accesos.insert(
-        0,
-        const _Acceso('Gestión de incidencias', 'Reportes de los usuarios: estado y resolución.', Icons.support_agent_outlined, '/incidencias', 'Fase 5'),
-      );
-    } else {
-      accesos.add(
-        const _Acceso('Incidencias', 'Reporta un problema al equipo de Soporte.', Icons.report_outlined, '/incidencias', 'Fase 5'),
-      );
-    }
-    return accesos;
+    return switch (rol) {
+      'DOCENTE' => 'Portal docente',
+      'ADMIN_ACADEMICO' => 'Administración académica',
+      'ADMIN_ESPACIOS' => 'Administración de espacios',
+      'SOPORTE' => 'Soporte',
+      'AUDITOR' => 'Auditoría',
+      'SEGURIDAD' => 'Personal de seguridad',
+      _ => 'Personal universitario',
+    };
   }
 
   @override
@@ -95,7 +102,7 @@ class HomePage extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${sesion?.perfil.programa?.nombre ?? 'Sin programa'} · ${sesion?.perfil.codigoInstitucional ?? 'Sin código'}',
+            _subtitulo(sesion, rol),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colores.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
@@ -105,16 +112,12 @@ class HomePage extends ConsumerWidget {
             crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.92,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.9,
             children: [
               for (final acceso in accesos)
-                _TarjetaAcceso(
-                  acceso: acceso,
-                  habilitado: acceso.ruta != null,
-                  onTap: acceso.ruta == null ? null : () => context.go(acceso.ruta!),
-                ),
+                _TarjetaAcceso(acceso: acceso, onTap: () => context.go(acceso.ruta)),
             ],
           ),
         ],
@@ -124,10 +127,9 @@ class HomePage extends ConsumerWidget {
 }
 
 class _TarjetaAcceso extends StatelessWidget {
-  const _TarjetaAcceso({required this.acceso, required this.habilitado, this.onTap});
+  const _TarjetaAcceso({required this.acceso, this.onTap});
 
   final _Acceso acceso;
-  final bool habilitado;
   final VoidCallback? onTap;
 
   @override
@@ -139,22 +141,19 @@ class _TarjetaAcceso extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(acceso.icono, size: 28, color: habilitado ? colores.primary : colores.outline),
-              const Spacer(),
-              Text(acceso.titulo, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
+              Icon(acceso.icono, size: 26, color: colores.primary),
+              const SizedBox(height: 8),
               Text(
-                acceso.descripcion,
-                maxLines: 3,
+                acceso.titulo,
+                textAlign: TextAlign.center,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 6),
-              Text(acceso.fase, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colores.primary)),
             ],
           ),
         ),

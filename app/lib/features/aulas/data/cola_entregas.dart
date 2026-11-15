@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hive_ce/hive.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
@@ -75,15 +76,10 @@ final colaEntregasProvider = Provider<ColaEntregas>((ref) {
 });
 
 /// Identificador UUID v4 local para la entrega (idempotencia).
-String nuevoUuid() {
-  final ahora = DateTime.now().microsecondsSinceEpoch;
-  final base = List<int>.generate(16, (indice) => (ahora >> (indice % 8)) & 0xff ^ (indice * 31));
-  base[6] = (base[6] & 0x0f) | 0x40;
-  base[8] = (base[8] & 0x3f) | 0x80;
-  final hex = base.map((valor) => valor.toRadixString(16).padLeft(2, '0')).join();
-  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-'
-      '${hex.substring(16, 20)}-${hex.substring(20)}';
-}
+///
+/// Se usa el paquete `uuid`: el generador casero anterior podía producir cadenas de longitud
+/// incorrecta (XOR con valores > 255) y la API respondía «Invalid UUID».
+String nuevoUuid() => const Uuid().v4();
 
 /// Para depuración: JSON de la cola.
 String describirCola(ColaEntregas cola) => jsonEncode(cola.pendientes());

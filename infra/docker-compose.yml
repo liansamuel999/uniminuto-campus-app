@@ -54,6 +54,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       # Crea el bucket privado al primer arranque (reemplaza a `minio-init`/`mc`).
       MINIO_DEFAULT_BUCKETS: campus-app
+      # CORS para que el navegador pueda subir/descargar con URLs prefirmadas desde Flutter Web.
+      MINIO_API_CORS_ALLOW_ORIGIN: '*'
     ports:
       - '9000:9000' # API S3
       - '9001:9001' # Consola web

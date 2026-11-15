@@ -121,7 +121,8 @@ async function upsertUsuario(
   await cliente.query(
     `INSERT INTO carnet (usuario_id, codigo_barras, estado, vigente_hasta)
      VALUES ($1, $2, 'ACTIVO', (now() + interval '1 year')::date)
-     ON CONFLICT (codigo_barras) DO UPDATE SET usuario_id = EXCLUDED.usuario_id`,
+     ON CONFLICT (codigo_barras) DO UPDATE SET usuario_id = EXCLUDED.usuario_id,
+       vigente_hasta = EXCLUDED.vigente_hasta`,
     [usuarioId, codigoBarras],
   );
 
@@ -273,7 +274,11 @@ async function sembrarAulaVirtual(
           { tipo: 'ENLACE', titulo: 'Documentación recomendada', url: 'https://developer.mozilla.org/es/' },
         ]
       : [
-          { tipo: 'VIDEO', titulo: 'Video de la unidad', objetoKey: 'aulas/demo/video-unidad.mp4', mime: 'video/mp4' },
+          {
+            tipo: 'VIDEO',
+            titulo: 'Video de la unidad',
+            url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+          },
           { tipo: 'ANUNCIO', titulo: 'Recordatorio de entrega' },
         ];
 
@@ -347,6 +352,153 @@ async function sembrarAulaVirtual(
         }
       }
     }
+  }
+}
+
+/** Espejo de foros para las reglas de Firestore (D-78) y anuncios ficticios para la demo. */
+async function sembrarComunicacionDemo(): Promise<void> {
+  if (getApps().length === 0) {
+    log('Sin Firebase: se omite el espejo de foros y los anuncios de Firestore');
+    return;
+  }
+  const db = getFirestore();
+
+  const foros = await pool.query<{
+    foro_id: string;
+    aula_id: string;
+    miembros: string[] | null;
+    docentes: string[] | null;
+  }>(
+    `SELECT act.id AS foro_id, au.id AS aula_id,
+            (SELECT COALESCE(array_agg(u.uid_firebase), '{}')
+             FROM inscripcion i JOIN usuario u ON u.id = i.estudiante_id
+             WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS miembros,
+            (SELECT COALESCE(array_agg(u.uid_firebase), '{}')
+             FROM usuario u WHERE u.id = g.docente_id) AS docentes
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     WHERE act.tipo = 'FORO'`,
+  );
+  for (const foro of foros.rows) {
+    await db.doc(`foros_index/${foro.foro_id}`).set(
+      { aula_id: foro.aula_id, miembros: foro.miembros ?? [], docentes: foro.docentes ?? [] },
+      { merge: true },
+    );
+  }
+  log(`Espejo foros_index actualizado (${foros.rows.length} foros)`);
+
+  const aulas = await pool.query<{
+    id: string;
+    nombre: string;
+    docente_uid: string | null;
+    docente_nombre: string | null;
+  }>(
+    `SELECT au.id, au.nombre,
+            d.uid_firebase AS docente_uid,
+            d.nombres || ' ' || d.apellidos AS docente_nombre
+     FROM aula au JOIN grupo g ON g.id = au.grupo_id
+     LEFT JOIN usuario d ON d.id = g.docente_id`,
+  );
+  for (const aula of aulas.rows) {
+    if (!aula.docente_uid) continue;
+    const anuncios = [
+      {
+        id: 'anuncio-demo-bienvenida',
+        titulo: 'Bienvenida al curso',
+        cuerpo: 'Este es el aula virtual de demostración. Aquí encontrarás el material y las actividades.',
+        importante: false,
+      },
+      {
+        id: 'anuncio-demo-recordatorio',
+        titulo: 'Recordatorio de entrega',
+        cuerpo: 'Recuerda revisar la fecha de cierre de la primera tarea en la sección de actividades.',
+        importante: true,
+      },
+    ];
+    for (const anuncio of anuncios) {
+      await db.doc(`anuncios/${aula.id}/items/${anuncio.id}`).set(
+        {
+          titulo: anuncio.titulo,
+          cuerpo: anuncio.cuerpo,
+          importante: anuncio.importante,
+          autor_uid: aula.docente_uid,
+          autor_nombre: aula.docente_nombre ?? 'Docente',
+          creado_en: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+      if (anuncio.importante) {
+        await pool.query(
+          `INSERT INTO correo_simulado (anuncio_id, destinatario, asunto, cuerpo)
+           SELECT $1, i.estudiante_id, $2, $3
+           FROM inscripcion i JOIN aula au ON au.grupo_id = i.grupo_id
+           WHERE au.id = $4 AND i.estado = 'ACTIVA'
+           ON CONFLICT (anuncio_id, destinatario) DO NOTHING`,
+          [anuncio.id, anuncio.titulo, anuncio.cuerpo, aula.id],
+        );
+      }
+    }
+  }
+  log(`Anuncios de demostración creados para ${aulas.rows.length} aulas`);
+}
+
+/** PDF mínimo válido para que el contenido «Guía de la unidad» se pueda descargar en la demo. */
+function pdfDemostracion(): Buffer {
+  const texto = 'Guia de demostracion - Uniminuto Campus App';
+  const objetos = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${texto.length + 42} >>\nstream\nBT /F1 16 Tf 30 120 Td (${texto}) Tj ET\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objetos.forEach((objeto, indice) => {
+    offsets.push(pdf.length);
+    pdf += `${indice + 1} 0 obj\n${objeto}\nendobj\n`;
+  });
+  const inicioXref = pdf.length;
+  pdf += `xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\nstartxref\n${inicioXref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+/** Sube los archivos de contenido de la muestra al datalake local o a R2 (si está configurado). */
+async function subirArchivosDemo(): Promise<void> {
+  const endpoint = process.env.S3_ENDPOINT;
+  const accessKey = process.env.S3_ACCESS_KEY;
+  const secretKey = process.env.S3_SECRET_KEY;
+  const bucket = process.env.S3_BUCKET ?? 'campus-app';
+  if (!endpoint || !accessKey || !secretKey) {
+    log('Sin credenciales S3: se omite la subida de archivos de demostración');
+    return;
+  }
+  try {
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const cliente = new S3Client({
+      endpoint,
+      region: process.env.S3_REGION ?? 'us-east-1',
+      forcePathStyle: true,
+      credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+    });
+    await cliente.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: 'aulas/demo/guia-unidad.pdf',
+        ContentType: 'application/pdf',
+        Body: pdfDemostracion(),
+      }),
+    );
+    log('Archivo de demostración subido al datalake (aulas/demo/guia-unidad.pdf)');
+  } catch (error) {
+    console.warn(
+      '⚠ No se pudieron subir los archivos de demostración:',
+      error instanceof Error ? error.message : error,
+    );
   }
 }
 
@@ -450,6 +602,12 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       }
     }
   });
+
+  log('Espejo de foros y anuncios de Firestore');
+  await sembrarComunicacionDemo();
+
+  log('Archivos de contenido de demostración');
+  await subirArchivosDemo();
 
   const resumen = await pool.query<{ usuarios: number; grupos: number; salones: number; horarios: number }>(
     `SELECT

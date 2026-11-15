@@ -4,54 +4,131 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/session/session_controller.dart';
+import '../../../core/utils/formato.dart';
 import '../data/comunicacion_repository.dart';
 
-/// Anuncios del aula (`anuncios/{aulaId}/items`, D-48).
+/// Anuncios del aula (servidos por la API sobre Firestore, D-48 y D-78).
 ///
 /// Los publica el docente del aula; si marca «importante», la app llama a
 /// `POST /anuncios/{id}/replicar-correo` para llenar la bandeja simulada de los estudiantes.
-class AnunciosPage extends ConsumerWidget {
+class AnunciosPage extends ConsumerStatefulWidget {
   const AnunciosPage({super.key, required this.aulaId, required this.puedePublicar});
 
   final String aulaId;
   final bool puedePublicar;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(comunicacionRepositoryProvider);
-    final sesion = ref.watch(sesionProvider).valueOrNull;
+  ConsumerState<AnunciosPage> createState() => _AnunciosPageState();
+}
 
+class _AnunciosPageState extends ConsumerState<AnunciosPage> {
+  List<AnuncioAula> _anuncios = const [];
+  bool _cargando = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final anuncios = await ref.read(comunicacionRepositoryProvider).anuncios(widget.aulaId);
+      if (mounted) setState(() => _anuncios = anuncios);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.mensaje);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudieron cargar los anuncios.');
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _publicar() async {
+    final sesion = ref.read(sesionProvider).valueOrNull;
+    if (sesion == null) return;
+    final datos = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => const _DialogoAnuncio(),
+    );
+    if (datos == null) return;
+
+    final titulo = '${datos['titulo']}';
+    final cuerpo = '${datos['cuerpo']}';
+    final importante = datos['importante'] == true;
+
+    try {
+      final anuncioId = await ref.read(comunicacionRepositoryProvider).publicarAnuncio(
+            aulaId: widget.aulaId,
+            autorUid: sesion.uid,
+            autorNombre: sesion.perfil.nombreCompleto,
+            titulo: titulo,
+            cuerpo: cuerpo,
+            importante: importante,
+          );
+
+      var mensaje = 'Anuncio publicado.';
+      if (importante) {
+        final respuesta = await ref.read(apiClientProvider).postJson(
+          '/anuncios/$anuncioId/replicar-correo',
+          cuerpo: {'aulaId': widget.aulaId, 'asunto': titulo, 'cuerpo': cuerpo},
+        );
+        mensaje = 'Anuncio publicado y replicado a ${respuesta['creados'] ?? 0} estudiante(s).';
+      }
+      await _cargar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Anuncios')),
-      floatingActionButton: puedePublicar && sesion != null
+      appBar: AppBar(
+        title: const Text('Anuncios'),
+        actions: [IconButton(onPressed: _cargando ? null : _cargar, icon: const Icon(Icons.refresh))],
+      ),
+      floatingActionButton: widget.puedePublicar
           ? FloatingActionButton.extended(
-              onPressed: () => _publicar(context, ref, sesion),
+              onPressed: _publicar,
               icon: const Icon(Icons.campaign_outlined),
               label: const Text('Publicar'),
             )
           : null,
-      body: StreamBuilder<List<AnuncioAula>>(
-        stream: repo.anuncios(aulaId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return const _Aviso(
-              texto: 'No se pudieron leer los anuncios. Revisa la conexión '
-                  'o que las reglas de Firestore estén desplegadas.',
-            );
-          }
-          final anuncios = snapshot.data ?? const <AnuncioAula>[];
-          if (anuncios.isEmpty) {
-            return const _Aviso(texto: 'Todavía no hay anuncios en este aula.');
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            itemCount: anuncios.length,
-            itemBuilder: (context, indice) {
-              final anuncio = anuncios[indice];
-              return Card(
+      body: RefreshIndicator(
+        onRefresh: _cargar,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          children: [
+            if (_cargando)
+              const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            if (_error != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colores.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(_error!),
+              ),
+            if (!_cargando && _error == null && _anuncios.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('Todavía no hay anuncios en este aula.'),
+              ),
+            for (final anuncio in _anuncios)
+              Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -62,9 +139,7 @@ class AnunciosPage extends ConsumerWidget {
                         children: [
                           Icon(
                             anuncio.importante ? Icons.priority_high : Icons.campaign_outlined,
-                            color: anuncio.importante
-                                ? Theme.of(context).colorScheme.error
-                                : Theme.of(context).colorScheme.primary,
+                            color: anuncio.importante ? colores.error : colores.primary,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -83,63 +158,17 @@ class AnunciosPage extends ConsumerWidget {
                       const SizedBox(height: 8),
                       Text(
                         '${anuncio.autorNombre}'
-                        '${anuncio.creadoEn == null ? '' : ' · ${_fechaCorta(anuncio.creadoEn!)}'}',
+                        '${anuncio.creadoEn == null ? '' : ' · ${fechaHoraCorta(anuncio.creadoEn)}'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                   ),
                 ),
-              );
-            },
-          );
-        },
+              ),
+          ],
+        ),
       ),
     );
-  }
-
-  Future<void> _publicar(BuildContext context, WidgetRef ref, Sesion sesion) async {
-    final datos = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (_) => const _DialogoAnuncio(),
-    );
-    if (datos == null) return;
-
-    final titulo = '${datos['titulo']}';
-    final cuerpo = '${datos['cuerpo']}';
-    final importante = datos['importante'] == true;
-
-    try {
-      final anuncioId = await ref.read(comunicacionRepositoryProvider).publicarAnuncio(
-            aulaId: aulaId,
-            autorUid: sesion.uid,
-            autorNombre: sesion.perfil.nombreCompleto,
-            titulo: titulo,
-            cuerpo: cuerpo,
-            importante: importante,
-          );
-
-      var mensaje = 'Anuncio publicado.';
-      if (importante) {
-        final respuesta = await ref.read(apiClientProvider).postJson(
-          '/anuncios/$anuncioId/replicar-correo',
-          cuerpo: {'aulaId': aulaId, 'asunto': titulo, 'cuerpo': cuerpo},
-        );
-        mensaje = 'Anuncio publicado y replicado a ${respuesta['creados'] ?? 0} estudiante(s).';
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
-      }
-    } on ApiException catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo publicar el anuncio. ¿Estás conectado?')),
-        );
-      }
-    }
   }
 }
 
@@ -193,7 +222,7 @@ class _DialogoAnuncioState extends State<_DialogoAnuncio> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
         FilledButton(
           onPressed: () {
             final titulo = _titulo.text.trim();
@@ -210,34 +239,4 @@ class _DialogoAnuncioState extends State<_DialogoAnuncio> {
       ],
     );
   }
-}
-
-class _Aviso extends StatelessWidget {
-  const _Aviso({required this.texto});
-
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) {
-    final colores = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.campaign_outlined, size: 44, color: colores.outline),
-            const SizedBox(height: 10),
-            Text(texto, textAlign: TextAlign.center, style: TextStyle(color: colores.onSurfaceVariant)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _fechaCorta(DateTime fecha) {
-  final local = fecha.toLocal();
-  return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')} '
-      '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }

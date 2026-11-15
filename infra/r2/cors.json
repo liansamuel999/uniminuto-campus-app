@@ -1,0 +1,22 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://uniminuto-campus-app.web.app",
+      "https://uniminuto-campus-app.firebaseapp.com",
+      "http://localhost:3000",
+      "http://localhost:8080"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "PUT",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "*"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]

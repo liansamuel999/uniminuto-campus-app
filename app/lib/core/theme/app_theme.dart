@@ -12,6 +12,11 @@ abstract final class AppTheme {
       brightness: Brightness.light,
     ).copyWith(secondary: colorAcento);
 
+    final borde = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: esquema.outlineVariant),
+    );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: esquema,
@@ -34,17 +39,49 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
+          minimumSize: const Size(96, 48),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(96, 48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          side: BorderSide(color: esquema.outlineVariant),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(88, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+        ),
+      ),
+      // Campos con borde visible (antes se confundían con el fondo de los diálogos).
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: esquema.surfaceContainerHighest.withValues(alpha: 0.35),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+        fillColor: esquema.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: borde,
+        enabledBorder: borde,
+        disabledBorder: borde,
+        focusedBorder: borde.copyWith(
+          borderSide: BorderSide(color: esquema.primary, width: 1.6),
         ),
+        errorBorder: borde.copyWith(borderSide: BorderSide(color: esquema.error)),
+        focusedErrorBorder: borde.copyWith(
+          borderSide: BorderSide(color: esquema.error, width: 1.6),
+        ),
+      ),
+      // Diálogos de tamaño móvil: se mantienen modales con el fondo oscurecido y acciones
+      // con botones de tamaño táctil (Cancelar / Guardar).
+      dialogTheme: DialogThemeData(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        showDragHandle: true,
+        backgroundColor: Color(0xFFFFFFFF),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 64,
