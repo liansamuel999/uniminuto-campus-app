@@ -88,14 +88,16 @@ En desarrollo se usa MinIO con las mismas variables (`npm run infra:minio`).
 
 ## 5. APK Android
 
-Requisito de toolchain: Android SDK, **JDK 17–21** y el **SDK de Flutter fijado por el proyecto**
-(3.41.9). En la PC de la demo quedaron instalados Temurin 21 y Flutter 3.41.9 en local, porque el
+Requisito de toolchain: Android SDK, **JDK 17–21**, el **SDK de Flutter fijado por el proyecto**
+(3.41.9) y el **NDK 28.2.13676358** (Flutter 3.41.9 lo exige por defecto). En la PC de la demo
+quedaron instalados Temurin 21, Flutter 3.41.9 en local y el NDK con `sdkmanager`, porque el
 Flutter 3.50 del sistema exige Gradle 9.5/AGP 9 y el wrapper del proyecto es 8.14. El plugin Kotlin
-se fijó en **2.4.20** (las librerías de Firebase compilan con metadata 2.4) y `jvmTarget` usa el DSL
-`compilerOptions`.
+se fija en **2.4.20** (`android/build.gradle.kts` define `kotlin_version`), las librerías de Firebase
+compilan con metadata 2.4 y `jvmTarget` usa el DSL `compilerOptions`.
 
 ```powershell
 flutter config --jdk-dir="C:\Users\lians\jdks\temurin21\jdk-21.0.13+9"
+"C:\Users\lians\AppData\Local\Android\Sdk\cmdline-tools\latest\bin\sdkmanager.bat" "ndk;28.2.13676358"
 ```
 
 ```bash

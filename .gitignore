@@ -44,3 +44,9 @@ Thumbs.db
 
 # --- Datos locales de Docker ---
 infra/.data/
+
+# --- Entregables locales (APK de demostración) ---
+dist/
+
+# --- Archivos temporales de la sesion ---
+.tmp*/
