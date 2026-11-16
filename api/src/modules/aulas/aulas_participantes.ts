@@ -136,12 +136,22 @@ export function crearRepositorioAulasSocial(pool: Pool): RepositorioAulasSocial 
          JOIN aula au ON au.id = un.aula_id
          JOIN grupo g ON g.id = au.grupo_id
          JOIN asignatura asg ON asg.id = g.asignatura_id
-         WHERE (act.cierra_en IS NULL OR act.cierra_en >= now())
-           AND (
-             EXISTS (SELECT 1 FROM inscripcion i
-                     JOIN usuario u ON u.id = i.estudiante_id
-                     WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA' AND u.uid_firebase = $1)
-             OR EXISTS (SELECT 1 FROM usuario u WHERE u.id = g.docente_id AND u.uid_firebase = $1)
+         WHERE act.cierra_en IS NOT NULL
+           AND act.cierra_en >= now()
+           AND EXISTS (SELECT 1 FROM inscripcion i
+                       JOIN usuario u ON u.id = i.estudiante_id
+                       WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA' AND u.uid_firebase = $1)
+           -- Solo pendientes: una actividad ya entregada o un cuestionario ya respondido no se
+           -- le recuerda al estudiante (corrección de la muestra).
+           AND NOT EXISTS (
+             SELECT 1 FROM entrega e
+             JOIN usuario u2 ON u2.id = e.estudiante_id
+             WHERE e.actividad_id = act.id AND u2.uid_firebase = $1
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM intento_cuestionario ic
+             JOIN usuario u3 ON u3.id = ic.estudiante_id
+             WHERE ic.actividad_id = act.id AND u3.uid_firebase = $1
            )
          ORDER BY act.cierra_en NULLS LAST, act.titulo
          LIMIT 50`,

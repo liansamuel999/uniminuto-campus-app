@@ -11,6 +11,8 @@ export interface EntregaCreada {
   id: string;
   estado: EstadoEntrega;
   recibidaEn: string;
+  /** `true` cuando el estudiante reemplazó una entrega anterior antes del cierre. */
+  actualizada?: boolean;
 }
 
 export interface EntregaListada {
@@ -59,8 +61,11 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
           actividad_id: string;
           cierra_en: string | Date | null;
           inscripcion_id: string;
+          estudiante_id: string;
+          corte_id: string;
         }>(
-          `SELECT a.id AS actividad_id, a.cierra_en, i.id AS inscripcion_id
+          `SELECT a.id AS actividad_id, a.cierra_en, i.id AS inscripcion_id,
+                  i.estudiante_id, a.corte_id
            FROM actividad a
            JOIN unidad un ON un.id = a.unidad_id
            JOIN aula au ON au.id = un.aula_id
@@ -86,6 +91,60 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
           recibidaEnServidor: ahora,
           graciaHoras: env.ENTREGA_GRACIA_HORAS,
         });
+
+        // Reentrega: mientras la actividad no haya cerrado, el estudiante puede reemplazar su
+        // entrega (texto y archivos). Al hacerlo se invalida una calificación anterior para que
+        // el docente la revise de nuevo.
+        const existente = await cliente.query<{ id: string }>(
+          'SELECT id FROM entrega WHERE actividad_id = $1 AND estudiante_id = $2',
+          [datos.actividadId, fila.estudiante_id],
+        );
+        if (existente.rows[0]) {
+          if (ahora.getTime() > cierra.getTime()) {
+            throw errores.conflicto('La actividad ya cerró: no puedes cambiar tu entrega');
+          }
+          if (!evaluacion.aceptada) {
+            throw errores.conflicto('La actividad ya cerró: no puedes cambiar tu entrega');
+          }
+          const actualizada = await cliente.query<{ id: string; recibida_en_servidor: string | Date }>(
+            `UPDATE entrega
+             SET texto = $2, adjuntos = $3::jsonb, creada_en_cliente = $4,
+                 recibida_en_servidor = now(), estado = $5, actualizada_en = now()
+             WHERE id = $1
+             RETURNING id, recibida_en_servidor`,
+            [
+              existente.rows[0].id,
+              datos.texto ?? null,
+              JSON.stringify(datos.adjuntos),
+              datos.creadaEnCliente.toISOString(),
+              evaluacion.estado,
+            ],
+          );
+          await cliente.query('DELETE FROM calificacion WHERE actividad_id = $1 AND inscripcion_id = $2', [
+            datos.actividadId,
+            fila.inscripcion_id,
+          ]);
+          await cliente.query(
+            `INSERT INTO nota_corte (inscripcion_id, corte_id, nota_calculada)
+             SELECT $1, $2,
+                    ROUND(SUM(c.nota * a.peso_porcentual) / NULLIF(SUM(a.peso_porcentual), 0), 2)
+             FROM calificacion c JOIN actividad a ON a.id = c.actividad_id
+             WHERE c.inscripcion_id = $1 AND a.corte_id = $2
+             ON CONFLICT (inscripcion_id, corte_id)
+             DO UPDATE SET nota_calculada = EXCLUDED.nota_calculada, actualizada_en = now()`,
+            [fila.inscripcion_id, fila.corte_id],
+          );
+          return {
+            id: actualizada.rows[0]!.id,
+            estado: evaluacion.estado,
+            recibidaEn: (actualizada.rows[0]!.recibida_en_servidor instanceof Date
+              ? actualizada.rows[0]!.recibida_en_servidor
+              : new Date(actualizada.rows[0]!.recibida_en_servidor)
+            ).toISOString(),
+            actualizada: true,
+          };
+        }
+
         if (!evaluacion.aceptada) {
           throw errores.conflicto('La entrega llegó después del plazo con gracia');
         }
@@ -109,18 +168,18 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
 
         if (!insertada.rows[0]) {
           // Idempotencia: mismo entregaId devuelve la respuesta original sin duplicar.
-          const existente = await cliente.query<{ id: string; estado: string; recibida_en_servidor: string | Date }>(
+          const original = await cliente.query<{ id: string; estado: string; recibida_en_servidor: string | Date }>(
             'SELECT id, estado, recibida_en_servidor FROM entrega WHERE id = $1',
             [datos.entregaId],
           );
-          const original = existente.rows[0];
-          if (!original) throw errores.conflicto('No se pudo registrar la entrega');
+          const filaOriginal = original.rows[0];
+          if (!filaOriginal) throw errores.conflicto('No se pudo registrar la entrega');
           return {
-            id: original.id,
-            estado: original.estado as EstadoEntrega,
-            recibidaEn: (original.recibida_en_servidor instanceof Date
-              ? original.recibida_en_servidor
-              : new Date(original.recibida_en_servidor)
+            id: filaOriginal.id,
+            estado: filaOriginal.estado as EstadoEntrega,
+            recibidaEn: (filaOriginal.recibida_en_servidor instanceof Date
+              ? filaOriginal.recibida_en_servidor
+              : new Date(filaOriginal.recibida_en_servidor)
             ).toISOString(),
           };
         }
@@ -130,6 +189,7 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
           id: insertada.rows[0].id,
           estado: evaluacion.estado,
           recibidaEn: (recibida instanceof Date ? recibida : new Date(recibida)).toISOString(),
+          actualizada: false,
         };
       });
     },
@@ -160,8 +220,12 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
                 e.creada_en_cliente, e.recibida_en_servidor, e.estado,
                 i.id AS inscripcion_id, c.nota
          FROM entrega e
+         JOIN actividad act ON act.id = e.actividad_id
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
          JOIN usuario u ON u.id = e.estudiante_id
-         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id
+         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id AND i.grupo_id = g.id
          LEFT JOIN calificacion c ON c.actividad_id = e.actividad_id AND c.inscripcion_id = i.id
          WHERE e.actividad_id = $1 ORDER BY e.recibida_en_servidor DESC`,
         [actividadId],
@@ -192,13 +256,18 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         estado: string;
         inscripcion_id: string;
         nota: string | null;
+        cierra_en: string | Date | null;
       }>(
         `SELECT e.id, u.nombres || ' ' || u.apellidos AS estudiante, e.texto, e.adjuntos,
                 e.creada_en_cliente, e.recibida_en_servidor, e.estado,
-                i.id AS inscripcion_id, c.nota
+                i.id AS inscripcion_id, c.nota, act.cierra_en
          FROM entrega e
+         JOIN actividad act ON act.id = e.actividad_id
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
          JOIN usuario u ON u.id = e.estudiante_id
-         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id
+         JOIN inscripcion i ON i.estudiante_id = e.estudiante_id AND i.grupo_id = g.id
          LEFT JOIN calificacion c ON c.actividad_id = e.actividad_id AND c.inscripcion_id = i.id
          WHERE e.actividad_id = $1 AND u.uid_firebase = $2
          ORDER BY e.recibida_en_servidor DESC LIMIT 1`,
@@ -208,6 +277,11 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
       if (!fila) return null;
       const iso = (valor: string | Date) =>
         (valor instanceof Date ? valor : new Date(valor)).toISOString();
+      const cierra = fila.cierra_en
+        ? fila.cierra_en instanceof Date
+          ? fila.cierra_en
+          : new Date(fila.cierra_en)
+        : null;
       return {
         id: fila.id,
         estudiante: fila.estudiante,
@@ -218,6 +292,8 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
         estado: fila.estado,
         inscripcionId: fila.inscripcion_id,
         nota: fila.nota === null ? null : Number(fila.nota),
+        // Mientras no cierre, la pantalla de la tarea permite reemplazar la entrega.
+        puedeEditar: cierra === null || new Date() <= cierra,
       };
     },
   };

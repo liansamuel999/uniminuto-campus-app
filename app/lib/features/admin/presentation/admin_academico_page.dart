@@ -3,15 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
+import 'planificacion_tab.dart';
 
-/// Panel del Admin Académico: periodos, asignaturas, grupos e inscripciones (§5, Fase 5).
+/// Panel del Admin Académico: periodos, asignaturas, grupos, inscripciones y horarios/salones.
 class AdminAcademicoPage extends ConsumerWidget {
   const AdminAcademicoPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Administración académica'),
@@ -22,11 +23,18 @@ class AdminAcademicoPage extends ConsumerWidget {
               Tab(text: 'Asignaturas'),
               Tab(text: 'Grupos'),
               Tab(text: 'Inscripciones'),
+              Tab(text: 'Horarios y salones'),
             ],
           ),
         ),
         body: const TabBarView(
-          children: [_PeriodosTab(), _AsignaturasTab(), _GruposTab(), _InscripcionesTab()],
+          children: [
+            _PeriodosTab(),
+            _AsignaturasTab(),
+            _GruposTab(),
+            _InscripcionesTab(),
+            PlanificacionTab(),
+          ],
         ),
       ),
     );
@@ -138,7 +146,9 @@ class _PeriodosTabState extends ConsumerState<_PeriodosTab> {
         label: const Text('Periodo'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Espacio inferior para que el botón flotante «crear» no tape el menú de acciones
+        // (tres puntos) del último elemento de la lista.
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
           if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           _ErrorTexto(_error),
@@ -315,7 +325,9 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
         label: const Text('Asignatura'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Espacio inferior para que el botón flotante «crear» no tape el menú de acciones
+        // (tres puntos) del último elemento de la lista.
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
           if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           _ErrorTexto(_error),
@@ -491,7 +503,9 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
         label: const Text('Grupo'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Espacio inferior para que el botón flotante «crear» no tape el menú de acciones
+        // (tres puntos) del último elemento de la lista.
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
           if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           _ErrorTexto(_error),
@@ -796,7 +810,9 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
         label: const Text('Inscribir'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Espacio inferior para que el botón flotante «crear» no tape el menú de acciones
+        // (tres puntos) del último elemento de la lista.
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
           DropdownButtonFormField<String>(
             initialValue: _grupoId,

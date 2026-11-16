@@ -2,12 +2,28 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type { S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { z } from 'zod';
 
 import type { Env } from '../../config/env.js';
 import { errores } from '../../lib/errors.js';
 import { validarArchivo } from '../../lib/cuestionarios.js';
 import { urlLectura, urlSubida } from '../../lib/s3_archivos.js';
+
+/**
+ * Comprueba que el objeto exista antes de firmar la URL. Si el datalake se reinició y perdió los
+ * archivos de demostración, la app recibe un 404 con un mensaje claro en lugar de abrir una página
+ * XML de MinIO con `NoSuchKey` (corrección de la muestra).
+ */
+async function asegurarObjetoExiste(s3: S3Client, bucket: string, objetoKey: string): Promise<void> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objetoKey }));
+  } catch {
+    throw errores.noEncontrado(
+      'El archivo ya no está en el almacenamiento de la demo. Vuelve a ejecutar la semilla o súbelo de nuevo.',
+    );
+  }
+}
 
 export interface ArchivoMetadatos {
   id: string;
@@ -110,6 +126,7 @@ export function registrarRutasArchivos(
     const { id } = z.object({ id: z.string().uuid() }).parse(peticion.params);
     const archivo = await repo.obtener(id);
     if (!archivo) throw errores.noEncontrado('El archivo no existe');
+    await asegurarObjetoExiste(s3, env.S3_BUCKET, archivo.objetoKey);
     const url = await urlLectura(s3, env.S3_BUCKET, archivo.objetoKey);
     return {
       url,
@@ -136,6 +153,7 @@ export function registrarRutasArchivos(
           .regex(/^(aulas|foros|entregas|perfiles)\/[\w./-]+$/),
       })
       .parse(peticion.query ?? {});
+    await asegurarObjetoExiste(s3, env.S3_BUCKET, objetoKey);
     const url = await urlLectura(s3, env.S3_BUCKET, objetoKey);
     return { url, expiraEn: new Date(Date.now() + 15 * 60_000).toISOString() };
   });

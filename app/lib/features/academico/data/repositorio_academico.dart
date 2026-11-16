@@ -1,7 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
-
 import '../../../core/api/api_client.dart';
 import '../../../core/cache/cache_store.dart';
 import 'package:hive_ce/hive.dart';
@@ -97,11 +95,8 @@ class RepositorioAcademico {
       'mime': mime,
       'tamano': bytes.length,
     });
-    await _api.dio.put<dynamic>(
-      '${firma['urlPut']}',
-      data: bytes,
-      options: Options(headers: {'Content-Type': mime}),
-    );
+    // Cliente sin el token de la API: la URL de MinIO ya viene firmada.
+    await _api.putBinario('${firma['urlPut']}', bytes, mime: mime);
     return firma;
   }
 
@@ -142,8 +137,73 @@ class RepositorioAcademico {
         if (tamano != null) 'tamano': tamano,
       });
 
+  Future<void> editarContenido(
+    String contenidoId, {
+    String? titulo,
+    String? descripcion,
+    String? tipo,
+    String? objetoKey,
+    String? urlExterna,
+    String? mime,
+    int? tamano,
+  }) =>
+      _api.putJson('/contenidos/$contenidoId', cuerpo: {
+        if (titulo != null) 'titulo': titulo,
+        if (descripcion != null) 'descripcion': descripcion,
+        if (tipo != null) 'tipo': tipo,
+        if (objetoKey != null) 'objetoKey': objetoKey,
+        if (urlExterna != null) 'urlExterna': urlExterna,
+        if (mime != null) 'mime': mime,
+        if (tamano != null) 'tamano': tamano,
+      });
+
   Future<void> eliminarContenido(String contenidoId) async {
     await _api.deleteJson('/contenidos/$contenidoId');
+  }
+
+  /// Actividad con preguntas y respuestas correctas para el editor del docente.
+  Future<Map<String, dynamic>> detalleEditorActividad(String actividadId) =>
+      _api.getJson('/actividades/$actividadId/editor');
+
+  /// Reemplaza el cuestionario completo (preguntas y opciones) desde el editor.
+  Future<void> reemplazarCuestionario(
+    String actividadId, {
+    required bool revisionPermitida,
+    required List<Map<String, dynamic>> preguntas,
+  }) =>
+      _api.putJson('/actividades/$actividadId/cuestionario', cuerpo: {
+        'revisionPermitida': revisionPermitida,
+        'preguntas': preguntas,
+      });
+
+  /// Archivos/materiales propios de la actividad (no los contenidos de la unidad).
+  Future<Map<String, dynamic>> agregarRecursoActividad(
+    String actividadId, {
+    required String objetoKey,
+    required String nombre,
+    String? mime,
+    int? tamano,
+  }) =>
+      _api.postJson('/actividades/$actividadId/recursos', cuerpo: {
+        'objetoKey': objetoKey,
+        'nombre': nombre,
+        if (mime != null) 'mime': mime,
+        if (tamano != null) 'tamano': tamano,
+      });
+
+  Future<void> eliminarRecursoActividad(String recursoId) async {
+    await _api.deleteJson('/recursos/$recursoId');
+  }
+
+  /// Revisión del intento propio (aaciertos por pregunta si el docente la habilitó).
+  Future<Map<String, dynamic>?> miIntento(String actividadId) async {
+    try {
+      final datos = await _api.getJson('/actividades/$actividadId/mi-intento');
+      return datos.isEmpty ? null : datos;
+    } on ApiException catch (error) {
+      if (error.estado == 404) return null;
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> crearActividad(
@@ -156,6 +216,7 @@ class RepositorioAcademico {
     required double peso,
     double? notaMaxima,
     List<String>? formatosPermitidos,
+    bool? revisionPermitida,
   }) =>
       _api.postJson('/unidades/$unidadId/actividades', cuerpo: {
         'tipo': tipo,
@@ -167,6 +228,7 @@ class RepositorioAcademico {
         if (notaMaxima != null) 'notaMaxima': notaMaxima,
         if (formatosPermitidos != null && formatosPermitidos.isNotEmpty)
           'formatosPermitidos': formatosPermitidos,
+        if (revisionPermitida != null) 'revisionPermitida': revisionPermitida,
       });
 
   Future<void> editarActividad(
@@ -177,6 +239,7 @@ class RepositorioAcademico {
     double? peso,
     double? notaMaxima,
     List<String>? formatosPermitidos,
+    bool? revisionPermitida,
   }) =>
       _api.putJson('/actividades/$actividadId', cuerpo: {
         if (titulo != null) 'titulo': titulo,
@@ -186,6 +249,7 @@ class RepositorioAcademico {
         if (notaMaxima != null) 'notaMaxima': notaMaxima,
         if (formatosPermitidos != null && formatosPermitidos.isNotEmpty)
           'formatosPermitidos': formatosPermitidos,
+        if (revisionPermitida != null) 'revisionPermitida': revisionPermitida,
       });
 
   Future<Map<String, dynamic>?> miEntrega(String actividadId) async {

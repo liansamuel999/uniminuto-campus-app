@@ -167,10 +167,10 @@ class _CarnetPageState extends ConsumerState<CarnetPage> with SingleTickerProvid
         ),
         actions: [
           OutlinedButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(contexto).pop(false),
             child: const Text('Cancelar'),
           ),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Revocar')),
+          FilledButton(onPressed: () => Navigator.of(contexto).pop(true), child: const Text('Revocar')),
         ],
       ),
     );

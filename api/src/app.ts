@@ -21,6 +21,11 @@ import {
   type RepositorioEspacios,
 } from './modules/espacios/espacios.js';
 import {
+  crearRepositorioPlanificador,
+  registrarRutasPlanificador,
+  type RepositorioPlanificador,
+} from './modules/admin/planificador.js';
+import {
   crearRepositorioAdminAcademico,
   registrarRutasAdminAcademico,
   type RepositorioAdminAcademico,
@@ -112,6 +117,7 @@ export interface OpcionesApp {
   /** Permite inyectar administración, incidencias y auditoría (pruebas). */
   repositorioAdminAcademico?: RepositorioAdminAcademico;
   repositorioAdminEspacios?: RepositorioAdminEspacios;
+  repositorioPlanificador?: RepositorioPlanificador;
   repositorioIncidencias?: RepositorioIncidencias;
   repositorioAuditoria?: RepositorioAuditoria;
   logger?: boolean;
@@ -213,6 +219,10 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   registrarRutasAdminEspacios(
     app,
     opciones.repositorioAdminEspacios ?? crearRepositorioAdminEspacios(pool),
+  );
+  registrarRutasPlanificador(
+    app,
+    opciones.repositorioPlanificador ?? crearRepositorioPlanificador(pool),
   );
   registrarRutasIncidencias(
     app,

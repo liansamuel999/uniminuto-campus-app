@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
+import '../../../core/session/session_controller.dart';
 import '../../../core/utils/formato.dart';
 import 'aula_detalle_page.dart';
 
-/// Lista de cursos del usuario con la sección «Próximas entregas» al inicio.
+/// Lista de cursos del usuario con la sección «Próximas entregas» al inicio (solo estudiantes).
 class AulasPage extends ConsumerStatefulWidget {
   const AulasPage({super.key});
 
@@ -19,6 +20,9 @@ class _AulasPageState extends ConsumerState<AulasPage> {
   List<Map<String, dynamic>> _proximas = const [];
   bool _cargando = true;
   String? _error;
+
+  bool get _esEstudiante =>
+      ref.read(sesionProvider).valueOrNull?.roles.contains('ESTUDIANTE') ?? false;
 
   @override
   void initState() {
@@ -33,11 +37,16 @@ class _AulasPageState extends ConsumerState<AulasPage> {
     });
     try {
       final repo = ref.read(repositorioAcademicoProvider);
-      final resultados = await Future.wait([repo.aulas(), repo.proximasActividades()]);
+      final esEstudiante = _esEstudiante;
+      final resultados = await Future.wait([
+        repo.aulas(),
+        if (esEstudiante) repo.proximasActividades(),
+      ]);
       if (!mounted) return;
       setState(() {
         _aulas = _mapas(resultados[0]);
-        _proximas = _mapas(resultados[1]).take(6).toList();
+        // La API ya excluye entregas e intentos hechos; se ordena por fecha y se limita la lista.
+        _proximas = esEstudiante ? _mapas(resultados[1]).take(6).toList() : const [];
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
@@ -54,6 +63,7 @@ class _AulasPageState extends ConsumerState<AulasPage> {
   @override
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
+    final esEstudiante = _esEstudiante;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Aulas virtuales'),
@@ -75,15 +85,7 @@ class _AulasPageState extends ConsumerState<AulasPage> {
                 ),
                 child: Text(_error!),
               ),
-            if (_proximas.isNotEmpty) ...[
-              Text(
-                'Próximas entregas',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              for (final actividad in _proximas) _tarjetaProxima(context, actividad),
-              const SizedBox(height: 16),
-            ],
+            if (esEstudiante) _seccionProximas(context),
             Text(
               'Mis cursos',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -97,31 +99,95 @@ class _AulasPageState extends ConsumerState<AulasPage> {
     );
   }
 
+  Widget _seccionProximas(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Próximas entregas',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        if (!_cargando && _proximas.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colores.primaryContainer.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.task_alt),
+                SizedBox(width: 8),
+                Expanded(child: Text('No tienes actividades pendientes por entregar.')),
+              ],
+            ),
+          ),
+        for (final actividad in _proximas) _tarjetaProxima(context, actividad),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// Tarjeta de tamaño fijo: los títulos y fechas largos se recortan para que no cambie el
+  /// espaciado entre cursos (corrección de la muestra).
   Widget _tarjetaProxima(BuildContext context, Map<String, dynamic> actividad) {
     final cierre = DateTime.tryParse('${actividad['cierraEn']}');
     final tipo = '${actividad['tipo']}';
-    final entregada = actividad['entregada'] == true;
     final colores = Theme.of(context).colorScheme;
+    final icono = switch (tipo) {
+      'TAREA' => Icons.assignment_outlined,
+      'CUESTIONARIO' => Icons.quiz_outlined,
+      _ => Icons.forum_outlined,
+    };
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Icon(switch (tipo) {
-          'TAREA' => Icons.assignment_outlined,
-          'CUESTIONARIO' => Icons.quiz_outlined,
-          _ => Icons.forum_outlined,
-        }, color: colores.primary),
-        title: Text('${actividad['titulo']}'),
-        subtitle: Text(
-          '${actividad['asignatura']} · ${cierre == null ? 'sin fecha límite' : 'vence en ${tiempoRestante(cierre)}'}'
-          '${entregada ? ' · entregada' : ''}',
-        ),
-        trailing: const Icon(Icons.chevron_right),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => AulaDetallePage(
               aulaId: '${actividad['aulaId']}',
               titulo: '${actividad['asignatura']}',
               actividadInicialId: '${actividad['actividadId']}',
+            ),
+          ),
+        ),
+        child: SizedBox(
+          height: 68,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              children: [
+                Icon(icono, color: colores.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${actividad['titulo']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${actividad['asignatura']} · '
+                        '${cierre == null ? 'sin fecha límite' : 'vence en ${tiempoRestante(cierre)}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right),
+              ],
             ),
           ),
         ),
@@ -134,23 +200,48 @@ class _AulasPageState extends ConsumerState<AulasPage> {
     final esDocente = '${aula['rolEnAula']}' == 'DOCENTE';
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: colores.primaryContainer,
-          child: Icon(Icons.school_outlined, color: colores.onPrimaryContainer),
-        ),
-        title: Text('${aula['asignatura']}'),
-        subtitle: Text(
-          '${aula['codigo']} · Grupo ${aula['grupo']} · ${aula['periodo']}\n'
-          'Docente: ${aula['docente'] ?? 'Sin asignar'}',
-        ),
-        isThreeLine: true,
-        trailing: esDocente
-            ? const Chip(label: Text('Docente'), visualDensity: VisualDensity.compact)
-            : const Icon(Icons.chevron_right),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => AulaDetallePage(aulaId: '${aula['id']}', titulo: '${aula['asignatura']}'),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: colores.primaryContainer,
+                child: Icon(Icons.school_outlined, color: colores.onPrimaryContainer),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${aula['asignatura']}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${aula['codigo']} · Grupo ${aula['grupo']} · ${aula['periodo']} · '
+                      'Docente: ${aula['docente'] ?? 'Sin asignar'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              if (esDocente)
+                const Chip(label: Text('Docente'), visualDensity: VisualDensity.compact)
+              else
+                const Icon(Icons.chevron_right),
+            ],
           ),
         ),
       ),

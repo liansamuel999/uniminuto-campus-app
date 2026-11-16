@@ -8,6 +8,7 @@ import { crearPool } from '../../src/db/pool.js';
 import {
   ASIGNATURAS,
   CLAVE_DEMO,
+  GRUPOS_EXTRA,
   HORARIOS,
   USUARIOS,
   asegurarUsuarioFirebase,
@@ -220,6 +221,101 @@ async function sembrarEspaciosReservables(cliente: PoolClient): Promise<void> {
   }
 }
 
+/** Entrega e intento de ejemplo en actividades que ya existían de una pasada anterior. */
+async function sembrarActividadesRealizadasDemo(cliente: PoolClient): Promise<void> {
+  // Juan (primer estudiante) tiene entregas de tareas: no debe verlas en «Próximas entregas».
+  await cliente.query(
+    `INSERT INTO entrega (id, actividad_id, estudiante_id, texto, adjuntos, creada_en_cliente, estado)
+     SELECT gen_random_uuid(), act.id, est.estudiante_id,
+            'Entrega de demostración con archivo adjunto.',
+            '[{"objetoKey":"aulas/demo/guia-unidad.pdf","nombre":"guia-unidad.pdf","mime":"application/pdf","tamano":860}]'::jsonb,
+            now() - interval '1 day', 'ENVIADA'
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN LATERAL (
+       SELECT i.estudiante_id FROM inscripcion i
+       JOIN usuario u ON u.id = i.estudiante_id
+       WHERE i.grupo_id = au.grupo_id AND i.estado = 'ACTIVA'
+       ORDER BY (u.correo LIKE 'juan%') DESC, u.correo LIMIT 1
+     ) est ON true
+     WHERE act.tipo = 'TAREA'
+     ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+  );
+  await cliente.query(
+    `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+     SELECT e.actividad_id, i.id, 4.2, 'Buen trabajo en la demostración'
+     FROM entrega e
+     JOIN actividad act ON act.id = e.actividad_id
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     JOIN inscripcion i ON i.grupo_id = g.id AND i.estudiante_id = e.estudiante_id
+     ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+  );
+
+  // María (segunda estudiante) ya respondió los cuestionarios: tampoco se le recuerdan.
+  await cliente.query(
+    `INSERT INTO intento_cuestionario (actividad_id, estudiante_id, respuestas, puntaje)
+     SELECT act.id, est.estudiante_id, res.respuestas, 5.0
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN LATERAL (
+       SELECT i.estudiante_id FROM inscripcion i
+       JOIN usuario u ON u.id = i.estudiante_id
+       WHERE i.grupo_id = au.grupo_id AND i.estado = 'ACTIVA'
+       ORDER BY (u.correo LIKE 'maria%') DESC, u.correo DESC LIMIT 1
+     ) est ON true
+     CROSS JOIN LATERAL (
+       SELECT jsonb_object_agg(p.id::text, jsonb_build_array(o.id::text)) AS respuestas
+       FROM pregunta p
+       JOIN opcion_respuesta o ON o.pregunta_id = p.id AND o.es_correcta
+       WHERE p.actividad_id = act.id
+     ) res
+     WHERE act.tipo = 'CUESTIONARIO' AND res.respuestas IS NOT NULL
+     ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+  );
+  await cliente.query(
+    `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+     SELECT ic.actividad_id, i.id, 5.0, 'Autocalificado por el cuestionario'
+     FROM intento_cuestionario ic
+     JOIN actividad act ON act.id = ic.actividad_id
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     JOIN inscripcion i ON i.grupo_id = g.id AND i.estudiante_id = ic.estudiante_id
+     ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+  );
+
+  // Materiales de ejemplo propios de las actividades (no de los contenidos de la unidad).
+  await cliente.query(
+    `INSERT INTO actividad_recurso (actividad_id, objeto_key, nombre, mime, tamano, subido_por)
+     SELECT act.id, 'aulas/demo/guia-unidad.pdf', 'Guía de la actividad.pdf',
+            'application/pdf', 860, g.docente_id
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     WHERE act.tipo IN ('TAREA', 'CUESTIONARIO')
+       AND NOT EXISTS (
+         SELECT 1 FROM actividad_recurso r
+         WHERE r.actividad_id = act.id AND r.objeto_key = 'aulas/demo/guia-unidad.pdf'
+       )`,
+  );
+
+  // Nota de corte coherente con las calificaciones de ejemplo.
+  await cliente.query(
+    `INSERT INTO nota_corte (inscripcion_id, corte_id, nota_calculada)
+     SELECT c.inscripcion_id, a.corte_id,
+            ROUND(SUM(c.nota * a.peso_porcentual) / NULLIF(SUM(a.peso_porcentual), 0), 2)
+     FROM calificacion c JOIN actividad a ON a.id = c.actividad_id
+     GROUP BY c.inscripcion_id, a.corte_id
+     ON CONFLICT (inscripcion_id, corte_id)
+     DO UPDATE SET nota_calculada = EXCLUDED.nota_calculada, actualizada_en = now()`,
+  );
+}
+
 /** Aula virtual con 3 cortes, 2 unidades, contenidos, actividades y una nota de ejemplo. */
 async function sembrarAulaVirtual(
   cliente: PoolClient,
@@ -312,25 +408,73 @@ async function sembrarAulaVirtual(
       if ((existeActividad.rowCount ?? 0) > 0) continue;
 
       const filaActividad = await cliente.query<{ id: string }>(
-        `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual)
-         VALUES ($1, $2, $3, 'Actividad de demostración con datos ficticios', now() + interval '14 days', $4, $5)
+        `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual, revision_permitida)
+         VALUES ($1, $2, $3, 'Actividad de demostración con datos ficticios', now() + interval '14 days', $4, $5, $6)
          RETURNING id`,
-        [unidadId, actividad.tipo, actividad.titulo, cortes[actividad.corte], actividad.peso],
+        [
+          unidadId,
+          actividad.tipo,
+          actividad.titulo,
+          cortes[actividad.corte],
+          actividad.peso,
+          actividad.tipo === 'CUESTIONARIO',
+        ],
       );
       const actividadId = filaActividad.rows[0]?.id;
       if (!actividadId) continue;
 
       if (actividad.tipo === 'CUESTIONARIO') {
+        const preguntasCorrectas: Array<{ preguntaId: string; opcionCorrecta: string }> = [];
         for (let orden = 1; orden <= 3; orden += 1) {
           const pregunta = await cliente.query<{ id: string }>(
             `INSERT INTO pregunta (actividad_id, enunciado, orden) VALUES ($1, $2, $3) RETURNING id`,
-            [actividadId, `Pregunta ${orden} de la unidad 1`, orden],
+            [
+              actividadId,
+              orden === 1
+                ? '¿Cuál es el objetivo principal de esta unidad?'
+                : orden === 2
+                  ? '¿Qué herramienta se usa en el ejemplo de la muestra?'
+                  : '¿Cuál de estas afirmaciones es correcta?',
+              orden,
+            ],
           );
           const preguntaId = pregunta.rows[0]!.id;
-          for (const [indice, texto] of ['Opción A', 'Opción B', 'Opción C'].entries()) {
-            await cliente.query(
-              `INSERT INTO opcion_respuesta (pregunta_id, texto, es_correcta, orden) VALUES ($1, $2, $3, $4)`,
+          const textos = ['Comprender y aplicar los conceptos', 'Un editor de texto', 'Las tres opciones anteriores'];
+          const opciones: string[] = [];
+          for (const [indice, texto] of textos.entries()) {
+            const opcion = await cliente.query<{ id: string }>(
+              `INSERT INTO opcion_respuesta (pregunta_id, texto, es_correcta, orden) VALUES ($1, $2, $3, $4) RETURNING id`,
               [preguntaId, texto, indice === 0, indice + 1],
+            );
+            opciones.push(opcion.rows[0]!.id);
+          }
+          preguntasCorrectas.push({ preguntaId, opcionCorrecta: opciones[0]! });
+        }
+
+        // Un intento de ejemplo: el docente puede ver qué opción eligió el estudiante.
+        const estudianteIntento = datos.estudiantes[1] ?? datos.estudiantes[0];
+        if (estudianteIntento) {
+          const respuestas: Record<string, string[]> = {};
+          for (const pregunta of preguntasCorrectas) {
+            respuestas[pregunta.preguntaId] = [pregunta.opcionCorrecta];
+          }
+          await cliente.query(
+            `INSERT INTO intento_cuestionario (actividad_id, estudiante_id, respuestas, puntaje)
+             VALUES ($1, $2, $3::jsonb, 5.0)
+             ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+            [actividadId, estudianteIntento.id, JSON.stringify(respuestas)],
+          );
+          const inscripcionIntento = await cliente.query<{ id: string }>(
+            'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
+            [estudianteIntento.id, datos.grupoId],
+          );
+          const inscripcionId = inscripcionIntento.rows[0]?.id;
+          if (inscripcionId) {
+            await cliente.query(
+              `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+               VALUES ($1, $2, 5.0, 'Autocalificado por el cuestionario')
+               ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+              [actividadId, inscripcionId],
             );
           }
         }
@@ -343,6 +487,25 @@ async function sembrarAulaVirtual(
         );
         const inscripcionId = inscripcion.rows[0]?.id;
         if (inscripcionId) {
+          await cliente.query(
+            `INSERT INTO entrega (id, actividad_id, estudiante_id, texto, adjuntos, creada_en_cliente, estado)
+             SELECT gen_random_uuid(), $1, i.estudiante_id, $2, $3::jsonb, now() - interval '1 day', 'ENVIADA'
+             FROM inscripcion i WHERE i.id = $4
+             ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+            [
+              actividadId,
+              'Entrega de demostración: revisa el archivo adjunto.',
+              JSON.stringify([
+                {
+                  objetoKey: 'aulas/demo/guia-unidad.pdf',
+                  nombre: 'guia-unidad.pdf',
+                  mime: 'application/pdf',
+                  tamano: 860,
+                },
+              ]),
+              inscripcionId,
+            ],
+          );
           await cliente.query(
             `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
              VALUES ($1, $2, 4.2, 'Buen trabajo en la demostración')
@@ -537,10 +700,11 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
     log('Asignaturas, grupos, inscripciones y horarios');
     for (const asignatura of ASIGNATURAS) {
       const filaAsignatura = await cliente.query<{ id: string }>(
-        `INSERT INTO asignatura (codigo, nombre, creditos) VALUES ($1, $2, $3)
-         ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos
+        `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos,
+           requiere_laboratorio = EXCLUDED.requiere_laboratorio
          RETURNING id`,
-        [asignatura.codigo, asignatura.nombre, asignatura.creditos],
+        [asignatura.codigo, asignatura.nombre, asignatura.creditos, asignatura.requiereLaboratorio],
       );
       const asignaturaId = filaAsignatura.rows[0]!.id;
 
@@ -581,6 +745,61 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
         );
       }
     }
+
+    log('Grupos adicionales para el planificador de salones');
+    for (const extra of GRUPOS_EXTRA) {
+      const asignatura = await cliente.query<{ id: string }>(
+        'SELECT id FROM asignatura WHERE codigo = $1',
+        [extra.asignatura],
+      );
+      const asignaturaId = asignatura.rows[0]?.id;
+      if (!asignaturaId) continue;
+      const filaGrupo = await cliente.query<{ id: string }>(
+        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (asignatura_id, periodo_id, numero_grupo) DO UPDATE SET docente_id = EXCLUDED.docente_id
+         RETURNING id`,
+        [asignaturaId, periodoId, idPorCorreo.get(extra.docente) ?? null, extra.numero],
+      );
+      const grupoId = filaGrupo.rows[0]!.id;
+      const estudiantesExtra = usuariosSembrados.filter((usuario) =>
+        extra.estudiantes.includes(usuario.correo),
+      );
+      for (const estudiante of estudiantesExtra) {
+        await cliente.query(
+          `INSERT INTO inscripcion (estudiante_id, grupo_id, estado) VALUES ($1, $2, 'ACTIVA')
+           ON CONFLICT (estudiante_id, grupo_id) DO UPDATE SET estado = 'ACTIVA'`,
+          [estudiante.id, grupoId],
+        );
+      }
+      await sembrarAulaVirtual(cliente, {
+        grupoId,
+        nombre: `${extra.asignatura} · Grupo ${extra.numero}`,
+        docenteUid: usuariosSembrados.find((usuario) => usuario.correo === extra.docente)?.uid,
+        estudiantes: estudiantesExtra,
+      });
+      for (const [dia, inicio, fin, salonCodigo] of extra.horarios) {
+        const salon = await cliente.query<{ id: string }>('SELECT id FROM salon WHERE codigo = $1', [
+          salonCodigo,
+        ]);
+        if (!salon.rows[0]) continue;
+        await cliente.query(
+          `INSERT INTO horario (grupo_id, salon_id, dia_semana, hora_inicio, hora_fin)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (grupo_id, dia_semana, hora_inicio) DO UPDATE SET salon_id = EXCLUDED.salon_id, hora_fin = EXCLUDED.hora_fin`,
+          [grupoId, salon.rows[0].id, dia, inicio, fin],
+        );
+      }
+    }
+
+    log('Entregas e intentos de ejemplo (actividades ya realizadas)');
+    await sembrarActividadesRealizadasDemo(cliente);
+
+    // Datos de demostración que se actualizan en cada pasada de la semilla.
+    await cliente.query(`UPDATE actividad SET revision_permitida = true WHERE tipo = 'CUESTIONARIO'`);
+    await cliente.query(
+      `UPDATE actividad SET formatos_permitidos = ARRAY['pdf','png','docx'] WHERE tipo = 'TAREA'`,
+    );
 
     log('Incidencias de demostración');
     const estudianteDemo = usuariosSembrados.find((usuario) => usuario.rol === 'ESTUDIANTE');

@@ -7,7 +7,12 @@ import { errores } from '../../lib/errors.js';
 import { eliminarIndiceForo, sincronizarIndiceForo } from '../../lib/indices_foros.js';
 
 export interface RepositorioAulasDocente {
-  actualizarAula(uid: string, aulaId: string, datos: { nombre?: string; descripcion?: string }): Promise<boolean>;
+  actualizarAula(
+    uid: string,
+    aulaId: string,
+    datos: { nombre?: string; descripcion?: string },
+    esAdmin?: boolean,
+  ): Promise<boolean>;
   crearUnidad(uid: string, aulaId: string, datos: { titulo: string; numero?: number }): Promise<{ id: string }>;
   actualizarUnidad(uid: string, unidadId: string, datos: { titulo?: string; numero?: number }): Promise<boolean>;
   eliminarUnidad(uid: string, unidadId: string): Promise<boolean>;
@@ -28,6 +33,7 @@ export interface RepositorioAulasDocente {
     uid: string,
     contenidoId: string,
     datos: {
+      tipo?: string;
       titulo?: string;
       descripcion?: string;
       objetoKey?: string;
@@ -49,6 +55,7 @@ export interface RepositorioAulasDocente {
       peso: number;
       notaMaxima?: number;
       formatosPermitidos?: string[];
+      revisionPermitida?: boolean;
     },
   ): Promise<{ id: string }>;
   actualizarActividad(
@@ -61,9 +68,56 @@ export interface RepositorioAulasDocente {
       peso?: number;
       notaMaxima?: number;
       formatosPermitidos?: string[];
+      revisionPermitida?: boolean;
     },
   ): Promise<boolean>;
   eliminarActividad(uid: string, actividadId: string): Promise<boolean>;
+  /** Actividad con sus preguntas y respuestas correctas, para el editor del docente. */
+  detalleEditor(uid: string, actividadId: string): Promise<{
+    id: string;
+    tipo: string;
+    titulo: string;
+    instrucciones: string | null;
+    cierraEn: string | null;
+    corte: number;
+    peso: number;
+    notaMaxima: number;
+    formatosPermitidos: string[];
+    revisionPermitida: boolean;
+    preguntas: Array<{
+      id: string;
+      enunciado: string;
+      tipo: string;
+      opciones: Array<{ id: string; texto: string; esCorrecta: boolean }>;
+    }>;
+    recursos: Array<{
+      id: string;
+      objetoKey: string;
+      nombre: string;
+      mime: string | null;
+      tamano: number | null;
+    }>;
+  }>;
+  /** Reemplaza todas las preguntas/opciones del cuestionario (editor completo). */
+  reemplazarCuestionario(
+    uid: string,
+    actividadId: string,
+    datos: {
+      revisionPermitida: boolean;
+      preguntas: Array<{
+        enunciado: string;
+        tipo?: string;
+        opciones: Array<{ texto: string; esCorrecta: boolean }>;
+      }>;
+    },
+  ): Promise<boolean>;
+  /** Archivos/materiales propios de la actividad (independientes de los contenidos del aula). */
+  agregarRecurso(
+    uid: string,
+    actividadId: string,
+    datos: { objetoKey: string; nombre: string; mime?: string; tamano?: number },
+  ): Promise<{ id: string }>;
+  eliminarRecurso(uid: string, recursoId: string): Promise<boolean>;
 }
 
 interface AulaDeGrupo {
@@ -150,9 +204,14 @@ async function validarPesoCorte(
 /** Edición del aula por el docente dueño del grupo (§5, Fase 3/6). */
 export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocente {
   return {
-    async actualizarAula(uid, aulaId, datos) {
-      const aula = await aulaPorUid(pool, uid, aulaId);
-      if (!aula) throw errores.prohibido('Solo el docente del aula puede editarla');
+    async actualizarAula(uid, aulaId, datos, esAdmin = false) {
+      if (esAdmin) {
+        const existe = await pool.query('SELECT 1 FROM aula WHERE id = $1', [aulaId]);
+        if (!existe.rows[0]) throw errores.noEncontrado('El aula virtual no existe');
+      } else {
+        const aula = await aulaPorUid(pool, uid, aulaId);
+        if (!aula) throw errores.prohibido('Solo el docente del aula puede editarla');
+      }
       await pool.query(
         `UPDATE aula SET nombre = COALESCE($2, nombre), descripcion = COALESCE($3, descripcion)
          WHERE id = $1`,
@@ -228,6 +287,7 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
       if (!aula) throw errores.prohibido('Solo el docente del aula puede editar sus contenidos');
       await pool.query(
         `UPDATE contenido SET
+           tipo = COALESCE($8, tipo),
            titulo = COALESCE($2, titulo),
            descripcion = COALESCE($3, descripcion),
            objeto_key = COALESCE($4, objeto_key),
@@ -243,6 +303,7 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
           datos.urlExterna ?? null,
           datos.mime ?? null,
           datos.tamano ?? null,
+          datos.tipo ?? null,
         ],
       );
       return true;
@@ -270,8 +331,8 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
         await validarPesoCorte(cliente, corteId, datos.peso);
 
         const resultado = await cliente.query<{ id: string }>(
-          `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual, nota_maxima, formatos_permitidos)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[]) RETURNING id`,
+          `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual, nota_maxima, formatos_permitidos, revision_permitida)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10) RETURNING id`,
           [
             unidadId,
             datos.tipo,
@@ -282,6 +343,7 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
             datos.peso,
             datos.notaMaxima ?? 5,
             datos.formatosPermitidos ?? null,
+            datos.revisionPermitida ?? false,
           ],
         );
         const actividadId = resultado.rows[0]!.id;
@@ -328,7 +390,8 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
              cierra_en = COALESCE($4, cierra_en),
              peso_porcentual = COALESCE($5, peso_porcentual),
              nota_maxima = COALESCE($6, nota_maxima),
-             formatos_permitidos = COALESCE($7::text[], formatos_permitidos)
+             formatos_permitidos = COALESCE($7::text[], formatos_permitidos),
+             revision_permitida = COALESCE($8, revision_permitida)
            WHERE id = $1`,
           [
             actividadId,
@@ -338,6 +401,7 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
             datos.peso ?? null,
             datos.notaMaxima ?? null,
             datos.formatosPermitidos ?? null,
+            datos.revisionPermitida ?? null,
           ],
         );
         return true;
@@ -358,6 +422,163 @@ export function crearRepositorioAulasDocente(pool: Pool): RepositorioAulasDocent
         throw error;
       }
     },
+
+    async detalleEditor(uid, actividadId) {
+      const aula = await aulaDeActividad(pool, uid, actividadId);
+      if (!aula) throw errores.prohibido('Solo el docente del aula puede editar sus actividades');
+
+      const actividad = await pool.query<{
+        id: string;
+        tipo: string;
+        titulo: string;
+        instrucciones: string | null;
+        cierra_en: string | Date | null;
+        corte: number;
+        peso_porcentual: string;
+        nota_maxima: string;
+        formatos_permitidos: string[] | null;
+        revision_permitida: boolean;
+      }>(
+        `SELECT act.id, act.tipo, act.titulo, act.instrucciones, act.cierra_en,
+                c.numero AS corte, act.peso_porcentual, act.nota_maxima,
+                act.formatos_permitidos, act.revision_permitida
+         FROM actividad act JOIN corte c ON c.id = act.corte_id
+         WHERE act.id = $1`,
+        [actividadId],
+      );
+      const fila = actividad.rows[0]!;
+
+      const preguntas = await pool.query<{ id: string; enunciado: string; tipo: string }>(
+        'SELECT id, enunciado, tipo FROM pregunta WHERE actividad_id = $1 ORDER BY orden',
+        [actividadId],
+      );
+      const opciones = await pool.query<{
+        id: string;
+        pregunta_id: string;
+        texto: string;
+        es_correcta: boolean;
+      }>(
+        'SELECT id, pregunta_id, texto, es_correcta FROM opcion_respuesta WHERE pregunta_id = ANY($1::uuid[]) ORDER BY orden',
+        [preguntas.rows.map((pregunta) => pregunta.id)],
+      );
+
+      const recursos = await pool.query<{
+        id: string;
+        objeto_key: string;
+        nombre: string;
+        mime: string | null;
+        tamano: string | null;
+      }>(
+        `SELECT id, objeto_key, nombre, mime, tamano FROM actividad_recurso
+         WHERE actividad_id = $1 ORDER BY creado_en`,
+        [actividadId],
+      );
+
+      return {
+        id: fila.id,
+        tipo: fila.tipo,
+        titulo: fila.titulo,
+        instrucciones: fila.instrucciones,
+        cierraEn: fila.cierra_en ? new Date(fila.cierra_en).toISOString() : null,
+        corte: fila.corte,
+        peso: Number(fila.peso_porcentual),
+        notaMaxima: Number(fila.nota_maxima),
+        formatosPermitidos: fila.formatos_permitidos ?? [],
+        revisionPermitida: fila.revision_permitida,
+        preguntas: preguntas.rows.map((pregunta) => ({
+          id: pregunta.id,
+          enunciado: pregunta.enunciado,
+          tipo: pregunta.tipo,
+          opciones: opciones.rows
+            .filter((opcion) => opcion.pregunta_id === pregunta.id)
+            .map((opcion) => ({
+              id: opcion.id,
+              texto: opcion.texto,
+              esCorrecta: opcion.es_correcta,
+            })),
+        })),
+        recursos: recursos.rows.map((recurso) => ({
+          id: recurso.id,
+          objetoKey: recurso.objeto_key,
+          nombre: recurso.nombre,
+          mime: recurso.mime,
+          tamano: recurso.tamano === null ? null : Number(recurso.tamano),
+        })),
+      };
+    },
+
+    async reemplazarCuestionario(uid, actividadId, datos) {
+      const aula = await aulaDeActividad(pool, uid, actividadId);
+      if (!aula) throw errores.prohibido('Solo el docente del aula puede editar sus cuestionarios');
+      if (aula.tipo !== 'CUESTIONARIO') throw errores.datosInvalidos('La actividad no es un cuestionario');
+      for (const pregunta of datos.preguntas) {
+        if (!pregunta.opciones.some((opcion) => opcion.esCorrecta)) {
+          throw errores.datosInvalidos('Cada pregunta debe tener al menos una respuesta correcta');
+        }
+      }
+
+      return withTx(pool, async (cliente) => {
+        await cliente.query('UPDATE actividad SET revision_permitida = $2 WHERE id = $1', [
+          actividadId,
+          datos.revisionPermitida,
+        ]);
+        await cliente.query('DELETE FROM pregunta WHERE actividad_id = $1', [actividadId]);
+        for (const [indice, pregunta] of datos.preguntas.entries()) {
+          const creada = await cliente.query<{ id: string }>(
+            'INSERT INTO pregunta (actividad_id, enunciado, tipo, orden) VALUES ($1, $2, $3, $4) RETURNING id',
+            [actividadId, pregunta.enunciado, pregunta.tipo ?? 'UNICA', indice + 1],
+          );
+          const preguntaId = creada.rows[0]!.id;
+          for (const [orden, opcion] of pregunta.opciones.entries()) {
+            await cliente.query(
+              'INSERT INTO opcion_respuesta (pregunta_id, texto, es_correcta, orden) VALUES ($1, $2, $3, $4)',
+              [preguntaId, opcion.texto, opcion.esCorrecta, orden + 1],
+            );
+          }
+        }
+        return true;
+      });
+    },
+
+    async agregarRecurso(uid, actividadId, datos) {
+      const aula = await aulaDeActividad(pool, uid, actividadId);
+      if (!aula) throw errores.prohibido('Solo el docente del aula puede adjuntar archivos a sus actividades');
+      const resultado = await pool.query<{ id: string }>(
+        `INSERT INTO actividad_recurso (actividad_id, objeto_key, nombre, mime, tamano, subido_por)
+         SELECT $1, $2, $3, $4, $5, u.id
+         FROM usuario u WHERE u.uid_firebase = $6
+         RETURNING id`,
+        [
+          actividadId,
+          datos.objetoKey,
+          datos.nombre,
+          datos.mime ?? null,
+          datos.tamano ?? null,
+          uid,
+        ],
+      );
+      const id = resultado.rows[0]?.id;
+      if (!id) throw errores.datosInvalidos('No se encontró el usuario que sube el archivo');
+      return { id };
+    },
+
+    async eliminarRecurso(uid, recursoId) {
+      const acceso = await pool.query<{ id: string }>(
+        `SELECT r.id FROM actividad_recurso r
+         JOIN actividad act ON act.id = r.actividad_id
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
+         JOIN usuario u ON u.id = g.docente_id
+         WHERE r.id = $1 AND u.uid_firebase = $2`,
+        [recursoId, uid],
+      );
+      if (!acceso.rows[0]) {
+        throw errores.prohibido('Solo el docente del aula puede eliminar archivos de sus actividades');
+      }
+      const resultado = await pool.query('DELETE FROM actividad_recurso WHERE id = $1', [recursoId]);
+      return (resultado.rowCount ?? 0) > 0;
+    },
   };
 }
 
@@ -372,7 +593,17 @@ const esquemaUnidadParcial = esquemaUnidad.partial().strict();
 
 const esquemaContenido = z
   .object({
-    tipo: z.enum(['PDF', 'VIDEO', 'ENLACE', 'ANUNCIO']),
+    tipo: z.enum([
+      'PDF',
+      'VIDEO',
+      'ENLACE',
+      'ANUNCIO',
+      'IMAGEN',
+      'DOCUMENTO',
+      'PRESENTACION',
+      'HOJA_CALCULO',
+      'ARCHIVO',
+    ]),
     titulo: z.string().trim().min(3).max(160),
     descripcion: z.string().trim().max(2000).optional(),
     objetoKey: z.string().trim().min(3).max(300).optional(),
@@ -383,6 +614,19 @@ const esquemaContenido = z
   .strict();
 const esquemaContenidoParcial = z
   .object({
+    tipo: z
+      .enum([
+        'PDF',
+        'VIDEO',
+        'ENLACE',
+        'ANUNCIO',
+        'IMAGEN',
+        'DOCUMENTO',
+        'PRESENTACION',
+        'HOJA_CALCULO',
+        'ARCHIVO',
+      ])
+      .optional(),
     titulo: z.string().trim().min(3).max(160).optional(),
     descripcion: z.string().trim().max(2000).optional(),
     objetoKey: z.string().trim().min(3).max(300).optional(),
@@ -405,6 +649,7 @@ const esquemaActividad = z
       .array(z.string().trim().regex(/^[a-z0-9]{2,8}$/))
       .max(10)
       .optional(),
+    revisionPermitida: z.boolean().optional(),
   })
   .strict();
 const esquemaActividadParcial = z
@@ -418,6 +663,36 @@ const esquemaActividadParcial = z
       .array(z.string().trim().regex(/^[a-z0-9]{2,8}$/))
       .max(10)
       .optional(),
+    revisionPermitida: z.boolean().optional(),
+  })
+  .strict();
+
+const esquemaOpcionCuestionario = z
+  .object({
+    texto: z.string().trim().min(1).max(500),
+    esCorrecta: z.boolean(),
+  })
+  .strict();
+const esquemaPreguntaCuestionario = z
+  .object({
+    enunciado: z.string().trim().min(3).max(2000),
+    tipo: z.enum(['UNICA', 'MULTIPLE']).optional(),
+    opciones: z.array(esquemaOpcionCuestionario).min(2).max(10),
+  })
+  .strict();
+const esquemaCuestionario = z
+  .object({
+    revisionPermitida: z.boolean().default(false),
+    preguntas: z.array(esquemaPreguntaCuestionario).min(1).max(50),
+  })
+  .strict();
+
+const esquemaRecurso = z
+  .object({
+    objetoKey: z.string().trim().min(3).max(300),
+    nombre: z.string().trim().min(1).max(200),
+    mime: z.string().trim().max(120).optional(),
+    tamano: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -429,11 +704,13 @@ export function registrarRutasAulasDocente(
   repo: RepositorioAulasDocente,
 ): void {
   const docente = [app.autenticar, app.requerirRoles('DOCENTE', 'ADMIN_ACADEMICO')];
+  const soloAdminAcademico = [app.autenticar, app.requerirRoles('ADMIN_ACADEMICO')];
 
-  app.put('/api/v1/aulas/:id', { preHandler: docente }, async (peticion) => {
+  // El nombre/descripción del aula los administra la oficina académica; el docente no los edita.
+  app.put('/api/v1/aulas/:id', { preHandler: soloAdminAcademico }, async (peticion) => {
     const { id } = idParam.parse(peticion.params);
     const datos = esquemaAula.parse(peticion.body ?? {});
-    await repo.actualizarAula(peticion.actor!.uid, id, datos);
+    await repo.actualizarAula(peticion.actor!.uid, id, datos, true);
     return { ok: true };
   });
 
@@ -498,6 +775,32 @@ export function registrarRutasAulasDocente(
   app.delete('/api/v1/actividades/:id', { preHandler: docente }, async (peticion) => {
     const { id } = idParam.parse(peticion.params);
     await repo.eliminarActividad(peticion.actor!.uid, id);
+    return { eliminado: id };
+  });
+
+  // Editor completo de la actividad (sin ventanas emergentes): datos y preguntas con respuestas.
+  app.get('/api/v1/actividades/:id/editor', { preHandler: docente }, async (peticion) => {
+    const { id } = idParam.parse(peticion.params);
+    return repo.detalleEditor(peticion.actor!.uid, id);
+  });
+
+  app.put('/api/v1/actividades/:id/cuestionario', { preHandler: docente }, async (peticion) => {
+    const { id } = idParam.parse(peticion.params);
+    const datos = esquemaCuestionario.parse(peticion.body ?? {});
+    await repo.reemplazarCuestionario(peticion.actor!.uid, id, datos);
+    return { ok: true };
+  });
+
+  // Archivos/materiales propios de una actividad (tareas, exámenes o foros).
+  app.post('/api/v1/actividades/:id/recursos', { preHandler: docente }, async (peticion, respuesta) => {
+    const { id } = idParam.parse(peticion.params);
+    const datos = esquemaRecurso.parse(peticion.body ?? {});
+    return respuesta.code(201).send(await repo.agregarRecurso(peticion.actor!.uid, id, datos));
+  });
+
+  app.delete('/api/v1/recursos/:id', { preHandler: docente }, async (peticion) => {
+    const { id } = idParam.parse(peticion.params);
+    await repo.eliminarRecurso(peticion.actor!.uid, id);
     return { eliminado: id };
   });
 }

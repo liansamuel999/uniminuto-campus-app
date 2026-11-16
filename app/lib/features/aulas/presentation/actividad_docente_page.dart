@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/utils/formato.dart';
-import 'aula_editor.dart';
+import 'actividad_editor_page.dart';
 import 'foro_page.dart';
 
 /// Actividad vista por el docente: datos, entregas/adjuntos, intentos y calificación.
@@ -28,10 +28,11 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
   List<Map<String, dynamic>> _calificaciones = const [];
   List<Map<String, dynamic>> _entregas = const [];
   List<Map<String, dynamic>> _intentos = const [];
+  Map<String, dynamic> _detalle = const {};
   bool _cargando = true;
   String? _error;
 
-  String get _tipo => '${widget.actividad['tipo']}';
+  String get _tipo => '${_detalle['tipo'] ?? widget.actividad['tipo']}';
 
   @override
   void initState() {
@@ -54,8 +55,15 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
       final intentos = _tipo == 'CUESTIONARIO'
           ? await api.getList('/cuestionarios/$actividadId/intentos')
           : <dynamic>[];
+      Map<String, dynamic> detalle = const {};
+      try {
+        detalle = await api.getJson('/actividades/$actividadId/editor');
+      } on ApiException {
+        // Si el usuario no es el docente dueño (p. ej. admin), se usa la actividad del aula.
+      }
       if (!mounted) return;
       setState(() {
+        _detalle = detalle;
         _calificaciones = _mapas(calificaciones)
             .where((fila) => '${fila['actividadId']}' == actividadId)
             .toList();
@@ -75,7 +83,7 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
   @override
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
-    final actividad = widget.actividad;
+    final actividad = <String, dynamic>{...widget.actividad, ..._detalle};
     final cierra = DateTime.tryParse('${actividad['cierraEn']}');
 
     return Scaffold(
@@ -85,7 +93,15 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
           IconButton(
             tooltip: 'Editar actividad',
             onPressed: () async {
-              await editarActividadDialog(context, ref, actividad, _cargar);
+              final guardado = await Navigator.of(context).push<bool>(
+                MaterialPageRoute<bool>(
+                  builder: (_) => ActividadEditorPage(
+                    unidadId: '',
+                    actividadActual: actividad,
+                  ),
+                ),
+              );
+              if (guardado == true) await _cargar();
             },
             icon: const Icon(Icons.edit_outlined),
           ),
@@ -114,6 +130,26 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
                     if (('${actividad['instrucciones'] ?? ''}').trim().isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Text('${actividad['instrucciones']}'),
+                    ],
+                    if (((actividad['recursos'] as List<dynamic>?) ?? const []).whereType<Map>().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text('Materiales de la actividad', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final recurso in (actividad['recursos'] as List<dynamic>).whereType<Map>())
+                            ActionChip(
+                              avatar: const Icon(Icons.attach_file, size: 16),
+                              label: Text('${recurso['nombre'] ?? 'archivo'}'),
+                              onPressed: () => _abrirAdjunto(
+                                context,
+                                Map<String, dynamic>.from(recurso),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                     if (_tipo == 'FORO') ...[
                       const SizedBox(height: 10),
@@ -157,6 +193,10 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
                     leading: CircleAvatar(child: Text('${intento['puntaje']}')),
                     title: Text('${intento['estudiante']}'),
                     subtitle: Text('Enviado ${fechaHoraCorta(DateTime.tryParse('${intento['enviadoEn']}'))}'),
+                    trailing: TextButton(
+                      onPressed: () => _verIntento(intento),
+                      child: const Text('Ver respuestas'),
+                    ),
                   ),
                 ),
             ],
@@ -240,6 +280,81 @@ class _ActividadDocentePageState extends ConsumerState<ActividadDocentePage> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
     }
+  }
+
+  void _verIntento(Map<String, dynamic> intento) {
+    final detalle = (intento['detalle'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((fila) => Map<String, dynamic>.from(fila))
+        .toList();
+    showDialog<void>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        title: Text('Respuestas de ${intento['estudiante']}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text('Puntaje: ${intento['puntaje']}'),
+              const SizedBox(height: 8),
+              if (detalle.isEmpty) const Text('Sin detalle de respuestas.'),
+              for (final (indice, respuesta) in detalle.indexed)
+                Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              respuesta['acerto'] == true ? Icons.check_circle : Icons.cancel_outlined,
+                              color: respuesta['acerto'] == true
+                                  ? Colors.green
+                                  : Theme.of(contexto).colorScheme.error,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${indice + 1}. ${respuesta['enunciado']}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        for (final opcion in ((respuesta['opciones'] as List<dynamic>?) ?? const [])
+                            .whereType<Map>())
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              '${((respuesta['elegidas'] as List<dynamic>?) ?? const []).contains('${opcion['id']}') ? '✔ Elegida' : '   '} '
+                              '${opcion['texto']} ${opcion['esCorrecta'] == true ? '(correcta)' : ''}',
+                              style: TextStyle(
+                                color: opcion['esCorrecta'] == true
+                                    ? Colors.green
+                                    : (((respuesta['elegidas'] as List<dynamic>?) ?? const [])
+                                            .contains('${opcion['id']}'))
+                                        ? Theme.of(contexto).colorScheme.error
+                                        : null,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(onPressed: () => Navigator.of(contexto).pop(), child: const Text('Cerrar')),
+        ],
+      ),
+    );
   }
 
   Future<void> _calificar(Map<String, dynamic> fila) async {

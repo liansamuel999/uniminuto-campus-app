@@ -31,7 +31,7 @@ class HomePage extends ConsumerWidget {
       Icons.admin_panel_settings_outlined,
       '/admin-academico',
     );
-    const adminEspacios = _Acceso('Espacios y horarios', Icons.domain_outlined, '/admin-espacios');
+    const miQr = _Acceso('Mi QR de ingreso', Icons.qr_code_2_outlined, '/carnet');
     const gestionIncidencias = _Acceso('Gestión de incidencias', Icons.support_agent_outlined, '/incidencias');
     const auditoria = _Acceso('Auditoría', Icons.shield_outlined, '/auditoria');
 
@@ -39,15 +39,16 @@ class HomePage extends ConsumerWidget {
       case 'DOCENTE':
         return [aulas, horario, asignaturas, notas, bandeja, incidencias, perfil];
       case 'ADMIN_ACADEMICO':
-        return [adminAcademico, incidencias, perfil];
+        return [adminAcademico, miQr, incidencias, perfil];
       case 'ADMIN_ESPACIOS':
-        return [adminEspacios, incidencias, perfil];
+        // Rol absorbido por la administración académica (D-85): se conserva por compatibilidad.
+        return [adminAcademico, miQr, incidencias, perfil];
       case 'SOPORTE':
         return [gestionIncidencias, perfil];
       case 'AUDITOR':
         return [auditoria, perfil];
       case 'SEGURIDAD':
-        return [incidencias, perfil];
+        return [miQr, incidencias, perfil];
       default:
         // Estudiante: primero lo que más usa (aulas y horario), bandeja después.
         return [aulas, horario, notas, asignaturas, bandeja, reservas, incidencias, perfil];
@@ -64,7 +65,7 @@ class HomePage extends ConsumerWidget {
     return switch (rol) {
       'DOCENTE' => 'Portal docente',
       'ADMIN_ACADEMICO' => 'Administración académica',
-      'ADMIN_ESPACIOS' => 'Administración de espacios',
+      'ADMIN_ESPACIOS' => 'Administración académica',
       'SOPORTE' => 'Soporte',
       'AUDITOR' => 'Auditoría',
       'SEGURIDAD' => 'Personal de seguridad',

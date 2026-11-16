@@ -457,7 +457,9 @@ export function registrarRutasAdminEspacios(
   app: FastifyInstance,
   repo: RepositorioAdminEspacios,
 ): void {
-  const soloAdminEspacios = [app.autenticar, app.requerirRoles('ADMIN_ESPACIOS')];
+  // El admin académico gestiona también la infraestructura física: la muestra eliminó el rol
+  // ADMIN_ESPACIOS y sus funciones se absorbieron aquí (planificador de salones, D-85).
+  const soloAdminEspacios = [app.autenticar, app.requerirRoles('ADMIN_ESPACIOS', 'ADMIN_ACADEMICO')];
   const lectura = [app.autenticar, app.requerirRoles('ADMIN_ACADEMICO', 'ADMIN_ESPACIOS')];
 
   // ── Edificios ───────────────────────────────────────────────────────────

@@ -33,23 +33,23 @@ class AppShell extends ConsumerWidget {
       Icons.admin_panel_settings_outlined,
       Icons.admin_panel_settings,
     );
-    const adminEspacios = _Destino('/admin-espacios', 'Espacios', Icons.domain_outlined, Icons.domain);
     const auditoria = _Destino('/auditoria', 'Auditoría', Icons.shield_outlined, Icons.shield);
 
     switch (rol) {
       case 'DOCENTE':
         return [inicio, aulas, horario, miQr, perfil];
       case 'ADMIN_ACADEMICO':
-        return [inicio, adminAcademico, perfil];
+        return [inicio, adminAcademico, miQr, perfil];
       case 'ADMIN_ESPACIOS':
-        return [inicio, adminEspacios, perfil];
+        // Rol absorbido por la administración académica (D-85).
+        return [inicio, adminAcademico, miQr, perfil];
       case 'SOPORTE':
         return [inicio, incidencias, perfil];
       case 'AUDITOR':
         return [inicio, auditoria, perfil];
       case 'SEGURIDAD':
-        // El personal de seguridad solo reporta incidencias; no usa el validador de QR.
-        return [inicio, incidencias, perfil];
+        // El personal de seguridad entra con su QR y reporta incidencias; no usa el validador.
+        return [inicio, miQr, incidencias, perfil];
       default:
         return [inicio, carnet, aulas, horario, perfil];
     }

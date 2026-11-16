@@ -24,6 +24,8 @@ export interface ContenidoAula {
   descripcion: string | null;
   urlExterna: string | null;
   objetoKey: string | null;
+  mime: string | null;
+  tamano: number | null;
 }
 
 export interface ActividadAula {
@@ -35,6 +37,15 @@ export interface ActividadAula {
   peso: number;
   notaMaxima: number;
   corte: number;
+  formatosPermitidos?: string[];
+  /** Archivos/materiales propios de la actividad (no los contenidos de la unidad). */
+  recursos?: Array<{
+    id: string;
+    objetoKey: string;
+    nombre: string;
+    mime: string | null;
+    tamano: number | null;
+  }>;
 }
 
 export interface UnidadAula {
@@ -164,8 +175,10 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
         descripcion: string | null;
         url_externa: string | null;
         objeto_key: string | null;
+        mime: string | null;
+        tamano: string | null;
       }>(
-        'SELECT id, unidad_id, tipo, titulo, descripcion, url_externa, objeto_key FROM contenido WHERE unidad_id = ANY($1::uuid[]) ORDER BY titulo',
+        'SELECT id, unidad_id, tipo, titulo, descripcion, url_externa, objeto_key, mime, tamano FROM contenido WHERE unidad_id = ANY($1::uuid[]) ORDER BY titulo',
         [unidades.rows.map((unidad) => unidad.id)],
       );
       const actividades = await pool.query<{
@@ -185,6 +198,18 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
          FROM actividad a JOIN corte c ON c.id = a.corte_id
          WHERE a.unidad_id = ANY($1::uuid[]) ORDER BY a.titulo`,
         [unidades.rows.map((unidad) => unidad.id)],
+      );
+      const recursos = await pool.query<{
+        id: string;
+        actividad_id: string;
+        objeto_key: string;
+        nombre: string;
+        mime: string | null;
+        tamano: string | null;
+      }>(
+        `SELECT id, actividad_id, objeto_key, nombre, mime, tamano FROM actividad_recurso
+         WHERE actividad_id = ANY($1::uuid[]) ORDER BY creado_en`,
+        [actividades.rows.map((actividad) => actividad.id)],
       );
 
       return {
@@ -209,6 +234,8 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
               descripcion: contenido.descripcion,
               urlExterna: contenido.url_externa,
               objetoKey: contenido.objeto_key,
+              mime: contenido.mime,
+              tamano: contenido.tamano === null ? null : Number(contenido.tamano),
             })),
           actividades: actividades.rows
             .filter((actividad) => actividad.unidad_id === unidad.id)
@@ -228,6 +255,15 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
               peso: Number(actividad.peso_porcentual),
               notaMaxima: Number(actividad.nota_maxima),
               corte: actividad.numero,
+              recursos: recursos.rows
+                .filter((recurso) => recurso.actividad_id === actividad.id)
+                .map((recurso) => ({
+                  id: recurso.id,
+                  objetoKey: recurso.objeto_key,
+                  nombre: recurso.nombre,
+                  mime: recurso.mime,
+                  tamano: recurso.tamano === null ? null : Number(recurso.tamano),
+                })),
             })),
         })),
       };

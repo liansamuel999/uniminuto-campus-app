@@ -5,9 +5,11 @@ import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/utils/formato.dart';
 import 'actividad_docente_page.dart';
+import 'actividad_editor_page.dart';
 import 'anuncios_page.dart';
 import 'aula_editor.dart';
 import 'calificaciones_curso_page.dart';
+import 'contenido_editor_page.dart';
 import 'contenido_visor.dart';
 import 'cuestionario_intro_page.dart';
 import 'foro_page.dart';
@@ -117,6 +119,10 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
               titulo: '${actividad['titulo']}',
               descripcion: actividad['instrucciones'] as String?,
               cierraEn: DateTime.tryParse('${actividad['cierraEn']}'),
+              recursos: ((actividad['recursos'] as List<dynamic>?) ?? const [])
+                  .whereType<Map>()
+                  .map((recurso) => Map<String, dynamic>.from(recurso))
+                  .toList(),
             ),
           ),
         );
@@ -154,12 +160,6 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
             ),
             icon: const Icon(Icons.campaign_outlined),
           ),
-          if (_esDocente)
-            IconButton(
-              tooltip: 'Editar datos del curso',
-              onPressed: _detalle == null ? null : _editarAula,
-              icon: const Icon(Icons.settings_outlined),
-            ),
         ],
       ),
       body: RefreshIndicator(
@@ -280,9 +280,13 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
               trailing: _esDocente
                   ? PopupMenuButton<String>(
                       onSelected: (valor) {
+                        if (valor == 'editar') {
+                          _abrirEditorContenido(contenido, unidadId: '${unidad['id']}');
+                        }
                         if (valor == 'eliminar') _eliminarContenido(contenido);
                       },
                       itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'editar', child: Text('Editar')),
                         PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
                       ],
                     )
@@ -293,8 +297,7 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
-                onPressed: () =>
-                    nuevoContenidoDialog(context, ref, '${unidad['id']}', _cargar),
+                onPressed: () => _abrirEditorContenido(null, unidadId: '${unidad['id']}'),
                 icon: const Icon(Icons.attach_file),
                 label: const Text('Añadir contenido'),
               ),
@@ -312,9 +315,7 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
               trailing: _esDocente
                   ? PopupMenuButton<String>(
                       onSelected: (valor) {
-                        if (valor == 'editar') {
-                          editarActividadDialog(context, ref, actividad, _cargar);
-                        }
+                        if (valor == 'editar') _abrirEditorActividad(actividad, unidadId: '${unidad['id']}');
                         if (valor == 'eliminar') _eliminarActividad(actividad);
                       },
                       itemBuilder: (_) => const [
@@ -329,8 +330,7 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
-                onPressed: () =>
-                    nuevaActividadDialog(context, ref, '${unidad['id']}', _cargar),
+                onPressed: () => _abrirEditorActividad(null, unidadId: '${unidad['id']}'),
                 icon: const Icon(Icons.add_task),
                 label: const Text('Añadir actividad'),
               ),
@@ -340,9 +340,34 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
     );
   }
 
-  Future<void> _editarAula() async {
-    final actualizado = await editarAulaDialog(context, ref, _detalle!);
-    if (actualizado == true) await _cargar();
+  Future<void> _abrirEditorContenido(
+    Map<String, dynamic>? contenido, {
+    String? unidadId,
+  }) async {
+    final guardado = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ContenidoEditorPage(
+          unidadId: unidadId ?? '${contenido?['unidadId'] ?? ''}',
+          contenidoActual: contenido,
+        ),
+      ),
+    );
+    if (guardado == true) await _cargar();
+  }
+
+  Future<void> _abrirEditorActividad(
+    Map<String, dynamic>? actividad, {
+    String? unidadId,
+  }) async {
+    final guardado = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ActividadEditorPage(
+          unidadId: unidadId ?? '${actividad?['unidadId'] ?? ''}',
+          actividadActual: actividad,
+        ),
+      ),
+    );
+    if (guardado == true) await _cargar();
   }
 
   Future<void> _eliminarContenido(Map<String, dynamic> contenido) async {

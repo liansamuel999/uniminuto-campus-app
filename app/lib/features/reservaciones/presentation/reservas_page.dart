@@ -414,6 +414,7 @@ class _HojaReserva extends StatefulWidget {
 
 class _HojaReservaState extends State<_HojaReserva> {
   int? _inicio;
+  int? _fin;
 
   bool _choca(int desde, int hasta) =>
       widget.ocupados.any((rango) => desde < rango.$2 && hasta > rango.$1);
@@ -461,12 +462,16 @@ class _HojaReservaState extends State<_HojaReserva> {
                   for (final minuto in inicios)
                     DropdownMenuItem(value: minuto, child: Text(widget.etiquetaHora(minuto))),
                 ],
-                onChanged: (valor) => setState(() => _inicio = valor),
+                onChanged: (valor) => setState(() {
+                  _inicio = valor;
+                  _fin = null;
+                }),
               ),
               const SizedBox(height: 10),
               if (_inicio != null)
                 DropdownButtonFormField<int>(
-                  key: ValueKey(_inicio),
+                  key: ValueKey('fin-$_inicio'),
+                  initialValue: _fin,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Hora de fin (máx. 2 h)'),
                   items: [
@@ -478,15 +483,26 @@ class _HojaReservaState extends State<_HojaReserva> {
                         ),
                       ),
                   ],
-                  onChanged: (valor) {
-                    if (valor != null) Navigator.of(context).pop((_inicio!, valor));
-                  },
+                  onChanged: (valor) => setState(() => _fin = valor),
                 ),
             ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                const Spacer(),
+                FilledButton.icon(
+                  // Se confirma explícitamente: elegir la hora de fin no crea la reserva.
+                  onPressed: (_inicio != null && _fin != null)
+                      ? () => Navigator.of(context).pop((_inicio!, _fin!))
+                      : null,
+                  icon: const Icon(Icons.event_available),
+                  label: const Text('Confirmar reserva'),
+                ),
+              ],
             ),
           ],
         ),

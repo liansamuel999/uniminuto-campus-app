@@ -31,18 +31,48 @@ export const USUARIOS: readonly UsuarioSemilla[] = [
   { correo: 'carolina.pena@demo.uniminuto.test', nombres: 'Carolina', apellidos: 'Peña Salgado', codigo: 'DOC-201', documento: '2002002001', rol: 'DOCENTE', docente: true },
   { correo: 'diego.suarez@demo.uniminuto.test', nombres: 'Diego Armando', apellidos: 'Suárez Ortiz', codigo: 'DOC-202', documento: '2002002002', rol: 'DOCENTE', docente: true },
   { correo: 'luisa.castro@demo.uniminuto.test', nombres: 'Luisa Fernanda', apellidos: 'Castro Ríos', codigo: 'ADM-301', documento: '3003003001', rol: 'ADMIN_ACADEMICO' },
-  { correo: 'camilo.vega@demo.uniminuto.test', nombres: 'Camilo Andrés', apellidos: 'Vega Torres', codigo: 'ADM-302', documento: '3003003002', rol: 'ADMIN_ESPACIOS' },
+  // El rol ADMIN_ESPACIOS se eliminó de la muestra: los salones y horarios los administra el
+  // admin académico con el planificador automático; Camilo pasa a apoyar la gestión académica.
+  { correo: 'camilo.vega@demo.uniminuto.test', nombres: 'Camilo Andrés', apellidos: 'Vega Torres', codigo: 'ADM-302', documento: '3003003002', rol: 'ADMIN_ACADEMICO' },
   { correo: 'jorge.salazar@demo.uniminuto.test', nombres: 'Jorge Enrique', apellidos: 'Salazar Bravo', codigo: 'SEG-401', documento: '4004004001', rol: 'SEGURIDAD' },
   { correo: 'natalia.gomez@demo.uniminuto.test', nombres: 'Natalia', apellidos: 'Gómez Pardo', codigo: 'SOP-501', documento: '5005005001', rol: 'SOPORTE' },
   { correo: 'oscar.rincon@demo.uniminuto.test', nombres: 'Óscar Iván', apellidos: 'Rincón Duarte', codigo: 'AUD-601', documento: '6006006001', rol: 'AUDITOR' },
 ];
 
 export const ASIGNATURAS = [
-  { codigo: 'IS-101', nombre: 'Programación I', creditos: 4, docente: 'carolina.pena@demo.uniminuto.test' },
-  { codigo: 'IS-201', nombre: 'Bases de Datos', creditos: 3, docente: 'carolina.pena@demo.uniminuto.test' },
-  { codigo: 'IS-301', nombre: 'Redes de Computadores', creditos: 3, docente: 'diego.suarez@demo.uniminuto.test' },
-  { codigo: 'IS-401', nombre: 'Ingeniería de Software', creditos: 4, docente: 'diego.suarez@demo.uniminuto.test' },
+  { codigo: 'IS-101', nombre: 'Programación I', creditos: 4, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: false },
+  { codigo: 'IS-201', nombre: 'Bases de Datos', creditos: 3, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: true },
+  { codigo: 'IS-301', nombre: 'Redes de Computadores', creditos: 3, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: true },
+  { codigo: 'IS-401', nombre: 'Ingeniería de Software', creditos: 4, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: false },
 ] as const;
+
+/** Grupos adicionales para mostrar el planificador de salones en acción. */
+export const GRUPOS_EXTRA: ReadonlyArray<{
+  readonly asignatura: string;
+  readonly numero: string;
+  readonly docente: string;
+  readonly estudiantes: readonly string[];
+  /** [día ISO, inicio, fin, salón sugerido]. Un salón repetido a la misma hora es un conflicto. */
+  readonly horarios: ReadonlyArray<readonly [number, string, string, string]>;
+}> = [
+  {
+    // Segundo grupo del laboratorio de Bases de Datos: la semilla lo deja a la misma hora y en
+    // el mismo salón que el grupo 01 para que "Planificar salones" resuelva el choque.
+    asignatura: 'IS-201',
+    numero: '02',
+    docente: 'carolina.pena@demo.uniminuto.test',
+    estudiantes: ['maria.cardenas@demo.uniminuto.test'],
+    horarios: [[2, '09:00', '11:00', 'B-204']],
+  },
+  {
+    // Grupo sin horario: el admin académico le agrega la clase y el sistema le asigna salón solo.
+    asignatura: 'IS-301',
+    numero: '02',
+    docente: 'diego.suarez@demo.uniminuto.test',
+    estudiantes: ['andres.molina@demo.uniminuto.test'],
+    horarios: [],
+  },
+];
 
 /** Horario semanal por asignatura: [día ISO, inicio, fin, salón]. */
 export const HORARIOS: Record<string, ReadonlyArray<readonly [number, string, string, string]>> = {

@@ -118,7 +118,27 @@ class RepositorioAdmin {
       _api.putJson('/horarios/$id', cuerpo: datos);
 
   Future<void> eliminarHorario(String id) async {
-    await _api.deleteJson('/horarios/$id');
+    await _api.deleteJson('/admin/horarios/$id');
+  }
+
+  // ── Planificador automático de salones y horarios (D-85) ────────────────
+  Future<Map<String, dynamic>> planificacion() => _api.getJson('/admin/planificacion');
+
+  Future<Map<String, dynamic>> planificarSalones() =>
+      _api.postJson('/admin/planificacion/ejecutar', cuerpo: const {});
+
+  Future<Map<String, dynamic>> crearHorarioAutomatico(String grupoId, Map<String, Object?> datos) =>
+      _api.postJson('/grupos/$grupoId/horarios', cuerpo: datos);
+
+  Future<Map<String, dynamic>> moverHorario(String horarioId, Map<String, Object?> datos) =>
+      _api.putJson('/admin/horarios/$horarioId', cuerpo: datos);
+
+  Future<void> quitarHorario(String horarioId) async {
+    await _api.deleteJson('/admin/horarios/$horarioId');
+  }
+
+  Future<void> quitarGrupo(String grupoId) async {
+    await _api.deleteJson('/admin/grupos/$grupoId');
   }
 
   // ── Incidencias ─────────────────────────────────────────────────────────

@@ -125,8 +125,9 @@ La clave privada institucional nunca sale del backend; la app del validador solo
 | `GET /api/v1/aulas/{id}/participantes` | miembros del aula | Compañeros y docente con correo para escribirles |
 | `GET /api/v1/mis-actividades/proximas` | estudiante o docente | Actividades próximas a vencer con curso y estado de entrega |
 | `GET /api/v1/mis-notas` · `GET /api/v1/aulas/{id}/mis-calificaciones` | estudiante | Notas por corte/actividad; la definitiva se publica cuando cierran los cortes (D-80) |
-| `POST /api/v1/entregas` | estudiante | Entrega idempotente por UUID de cliente (ENVIADA/TARDIA con gracia de 24 h) |
-| `GET /api/v1/actividades/{id}/mi-entrega` | estudiante | Estado de la entrega propia (para no duplicar) |
+| `POST /api/v1/entregas` | estudiante | Crea o **reemplaza** la entrega propia mientras la actividad siga abierta (reentrega, D-86); invalida una calificación previa |
+| `GET /api/v1/actividades/{id}/mi-entrega` | estudiante | Estado de la entrega propia, adjuntos y si todavía puede editarse |
+| `GET/POST /api/v1/actividades/{id}/recursos` · `DELETE /api/v1/recursos/{id}` | docente del aula | Archivos/materiales propios de la actividad (PDF, imágenes, Office, etc.), visibles al estudiante (D-86) |
 | `GET /api/v1/actividades/{id}/entregas` | docente del grupo | Entregas con estudiante, texto, adjuntos, estado y nota |
 | `GET /api/v1/cuestionarios/{id}` · `POST /api/v1/cuestionarios/{id}/intentos` | estudiante | Preguntas sin respuesta correcta e intento único autocalificado |
 | `GET /api/v1/cuestionarios/{id}/intentos` | docente del grupo | Revisión de intentos (puntaje y respuestas, D-69) |

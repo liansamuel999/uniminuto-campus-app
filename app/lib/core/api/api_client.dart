@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 /// Error de la API con el código del contrato `{codigo, mensaje}` (§7.7, D-17).
@@ -49,6 +51,46 @@ class ApiClient {
   final Future<String?> Function()? _tokenProvider;
 
   Dio get dio => _dio;
+
+  /// Sube bytes a una URL prefirmada del datalake (MinIO/S3).
+  ///
+  /// Se usa un cliente **sin** el interceptor del token: S3 rechaza la petición si recibe
+  /// `Authorization` además de la firma de la URL prefirmada. Este era el motivo por el que
+  /// «Adjuntar archivo» fallaba en la app aunque la URL prefirmada funcionara en el navegador.
+  Future<void> putBinario(String url, Uint8List bytes, {required String mime}) async {
+    final cliente = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 60),
+        sendTimeout: const Duration(seconds: 60),
+      ),
+    );
+    try {
+      final respuesta = await cliente.put<void>(
+        url,
+        data: bytes,
+        options: Options(
+          headers: {'Content-Type': mime},
+          responseType: ResponseType.plain,
+        ),
+      );
+      if ((respuesta.statusCode ?? 0) >= 400) {
+        throw ApiException(
+          codigo: 'ERROR_SUBIDA',
+          mensaje: 'No se pudo subir el archivo (HTTP ${respuesta.statusCode}).',
+          estado: respuesta.statusCode,
+        );
+      }
+    } on DioException catch (error) {
+      throw ApiException(
+        codigo: 'ERROR_SUBIDA',
+        mensaje:
+            'No se pudo subir el archivo (${error.response?.statusCode ?? 'sin conexión'}). '
+            'Revisa el datalake e inténtalo otra vez.',
+        estado: error.response?.statusCode,
+      );
+    }
+  }
 
   Future<Map<String, dynamic>> getJson(String ruta, {Map<String, dynamic>? parametros}) {
     return _ejecutar(() => _dio.get<Map<String, dynamic>>(ruta, queryParameters: parametros));

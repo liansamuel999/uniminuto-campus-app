@@ -43,12 +43,30 @@ export const MIMES_PERMITIDOS = new Set([
   'image/png',
   'image/jpeg',
   'image/webp',
+  'image/gif',
+  'image/svg+xml',
   'video/mp4',
+  'video/webm',
+  'audio/mpeg',
+  'audio/wav',
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/rtf',
   'application/zip',
   'text/plain',
+  'text/csv',
+  'text/html',
+  'application/json',
+  // Archivos generales del aula: el editor acepta cualquier archivo y el navegador no siempre
+  // informa el MIME; en la muestra se permite el genérico (corrección de la muestra).
+  'application/octet-stream',
 ]);
 
 export interface ValidacionArchivo {

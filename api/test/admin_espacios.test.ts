@@ -64,7 +64,7 @@ async function token(roles: string[]): Promise<string> {
 }
 
 describe('administración de espacios (§5)', () => {
-  it('solo el Admin de Espacios crea salones', async () => {
+  it('el Admin Académico también administra los salones (rol de espacios absorbido)', async () => {
     const app = await crearApp();
     const payload = { pisoId: PISO_ID, codigo: 'A-111', tipo: 'AULA', capacidad: 35 };
 
@@ -74,16 +74,15 @@ describe('administración de espacios (§5)', () => {
       headers: { authorization: `Bearer ${await token(['ADMIN_ACADEMICO'])}` },
       payload,
     });
-    expect(academico.statusCode).toBe(403);
+    expect(academico.statusCode).toBe(201);
 
-    const espacios = await app.inject({
+    const docente = await app.inject({
       method: 'POST',
       url: '/api/v1/espacios/salones',
-      headers: { authorization: `Bearer ${await token(['ADMIN_ESPACIOS'])}` },
+      headers: { authorization: `Bearer ${await token(['DOCENTE'])}` },
       payload,
     });
-    expect(espacios.statusCode).toBe(201);
-    expect(espacios.json()).toMatchObject({ codigo: 'A-111', capacidad: 35 });
+    expect(docente.statusCode).toBe(403);
     await app.close();
   });
 
@@ -121,7 +120,7 @@ describe('administración de espacios (§5)', () => {
     await app.close();
   });
 
-  it('el Admin Académico lee los horarios pero no los modifica', async () => {
+  it('el Admin Académico lee y administra los horarios', async () => {
     const app = await crearApp();
     const academicoToken = await token(['ADMIN_ACADEMICO']);
 
@@ -132,12 +131,13 @@ describe('administración de espacios (§5)', () => {
     });
     expect(lectura.statusCode).toBe(200);
 
+    // Ahora tiene permiso de administrarlos: el repo falso dice que no existe → 404.
     const borrado = await app.inject({
       method: 'DELETE',
       url: `/api/v1/horarios/${HORARIO_ID}`,
       headers: { authorization: `Bearer ${academicoToken}` },
     });
-    expect(borrado.statusCode).toBe(403);
+    expect(borrado.statusCode).toBe(404);
     await app.close();
   });
 

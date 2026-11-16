@@ -35,6 +35,14 @@ class _TareaPageState extends ConsumerState<TareaPage> {
       .map((formato) => '$formato')
       .toList();
 
+  /// Con una entrega registrada, se puede reemplazar mientras la actividad siga abierta.
+  bool get _puedeEditar => _entregaPrevia?['puedeEditar'] == true;
+  List<Map<String, dynamic>> get _recursosActividad =>
+      (widget.actividad['recursos'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((recurso) => Map<String, dynamic>.from(recurso))
+          .toList();
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +59,22 @@ class _TareaPageState extends ConsumerState<TareaPage> {
     setState(() => _cargandoEstado = true);
     try {
       final entrega = await ref.read(repositorioAcademicoProvider).miEntrega(_actividadId);
-      if (mounted) setState(() => _entregaPrevia = entrega);
+      if (mounted) {
+        setState(() {
+          _entregaPrevia = entrega;
+          // Reentrega: se precargan el texto y los archivos actuales para poder reemplazarlos.
+          if (entrega != null && entrega['puedeEditar'] == true) {
+            _texto.text = '${entrega['texto'] ?? ''}';
+            _adjuntos
+              ..clear()
+              ..addAll(
+                ((entrega['adjuntos'] as List<dynamic>?) ?? const [])
+                    .whereType<Map>()
+                    .map((adjunto) => Map<String, dynamic>.from(adjunto)),
+              );
+          }
+        });
+      }
     } catch (_) {
       // Sin conexión: se permite preparar la entrega y encolarla.
     } finally {
@@ -147,7 +170,10 @@ class _TareaPageState extends ConsumerState<TareaPage> {
         'adjuntos': _adjuntos,
       });
       if (!mounted) return;
-      setState(() => _mensaje = 'Entrega registrada como ${respuesta['estado']}.');
+      final actualizada = respuesta['actualizada'] == true;
+      setState(() => _mensaje = actualizada
+          ? 'Entrega actualizada. Puedes seguir modificándola hasta el cierre.'
+          : 'Entrega registrada como ${respuesta['estado']}.');
       _texto.clear();
       setState(() => _adjuntos.clear());
       await _cargarEstado();
@@ -179,6 +205,18 @@ class _TareaPageState extends ConsumerState<TareaPage> {
         ? 'No había entregas pendientes o sigue sin conexión.'
         : 'Se enviaron $enviadas entrega(s) pendiente(s).');
     if (enviadas > 0) await _cargarEstado();
+  }
+
+  Future<void> _abrirAdjunto(String objetoKey) async {
+    if (objetoKey.isEmpty) return;
+    try {
+      final url = await ref.read(repositorioAcademicoProvider).urlDeObjeto(objetoKey);
+      if (!mounted) return;
+      await abrirEnlace(context, url);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
+    }
   }
 
   @override
@@ -258,6 +296,33 @@ class _TareaPageState extends ConsumerState<TareaPage> {
             ),
           ),
           const SizedBox(height: 12),
+          if (_recursosActividad.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Materiales de la actividad', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final recurso in _recursosActividad)
+                          ActionChip(
+                            avatar: const Icon(Icons.attach_file, size: 16),
+                            label: Text('${recurso['nombre'] ?? 'archivo'}'),
+                            onPressed: () => _abrirAdjunto('${recurso['objetoKey'] ?? ''}'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (_cargandoEstado)
             const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
           if (yaEntregada) ...[
@@ -272,83 +337,120 @@ class _TareaPageState extends ConsumerState<TareaPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.check_circle_outline),
+                      Icon(_puedeEditar ? Icons.edit_note : Icons.check_circle_outline),
                       const SizedBox(width: 8),
-                      Text(
-                        'Entrega registrada (${_entregaPrevia?['estado']})',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      Expanded(
+                        child: Text(
+                          _puedeEditar
+                              ? 'Entrega registrada: puedes reemplazarla mientras la actividad siga abierta.'
+                              : 'Entrega registrada (${_entregaPrevia?['estado']}). La actividad ya cerró.',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Text('Enviada: ${fechaHoraCorta(DateTime.tryParse('${_entregaPrevia?['recibidaEnServidor']}'))}'),
+                  if ((_entregaPrevia?['texto'] as String? ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('Tu respuesta: ${_entregaPrevia?['texto']}'),
+                  ],
+                  if ((_entregaPrevia?['adjuntos'] as List<dynamic>? ?? const []).whereType<Map>().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final adjunto in (_entregaPrevia!['adjuntos'] as List<dynamic>).whereType<Map>())
+                          ActionChip(
+                            avatar: const Icon(Icons.attach_file, size: 16),
+                            label: Text('${adjunto['nombre'] ?? 'adjunto'}'),
+                            onPressed: () => _abrirAdjunto('${adjunto['objetoKey'] ?? ''}'),
+                          ),
+                      ],
+                    ),
+                  ],
                   if (_entregaPrevia?['nota'] != null)
                     Text('Nota: ${_entregaPrevia?['nota']}'),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-          ] else ...[
-            Text('Tu respuesta', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _texto,
-              minLines: 3,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                hintText: 'Escribe aquí… (opcional si adjuntas un archivo)',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _adjuntando ? null : _adjuntar,
-              icon: _adjuntando
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.attach_file),
-              label: Text(_adjuntando ? 'Subiendo…' : 'Adjuntar archivo'),
-            ),
-            if (_adjuntos.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final adjunto in _adjuntos)
-                    Chip(
-                      avatar: const Icon(Icons.insert_drive_file, size: 16),
-                      label: Text('${adjunto['nombre']}'),
-                      onDeleted: () => setState(() => _adjuntos.remove(adjunto)),
-                    ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 10),
-            if (_mensaje != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_mensaje!, style: TextStyle(color: colores.onSurfaceVariant)),
-              ),
-            FilledButton.icon(
-              onPressed: _enviando ? null : () => _enviar(soloGuardar: false),
-              icon: _enviando
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.send_outlined),
-              label: const Text('Enviar entrega'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _enviando ? null : () => _enviar(soloGuardar: true),
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Guardar para enviar después'),
-            ),
           ],
-          if (_mensaje != null && yaEntregada) ...[
+          if (!yaEntregada || _puedeEditar) _formulario(actualizando: yaEntregada),
+          if (_mensaje != null) ...[
             const SizedBox(height: 8),
-            Text(_mensaje!),
+            Text(_mensaje!, style: TextStyle(color: colores.onSurfaceVariant)),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _formulario({required bool actualizando}) {
+    final colores = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          actualizando ? 'Reemplazar entrega' : 'Tu respuesta',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _texto,
+          minLines: 3,
+          maxLines: 6,
+          decoration: const InputDecoration(
+            hintText: 'Escribe aquí… (opcional si adjuntas un archivo)',
+            alignLabelWithHint: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _adjuntando ? null : _adjuntar,
+          icon: _adjuntando
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.attach_file),
+          label: Text(_adjuntando ? 'Subiendo…' : 'Adjuntar archivo (hasta 50 MB)'),
+        ),
+        if (_adjuntos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final adjunto in _adjuntos)
+                Chip(
+                  avatar: const Icon(Icons.insert_drive_file, size: 16),
+                  label: Text('${adjunto['nombre']}'),
+                  onDeleted: () => setState(() => _adjuntos.remove(adjunto)),
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: _enviando ? null : () => _enviar(soloGuardar: false),
+          icon: _enviando
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.send_outlined),
+          label: Text(actualizando ? 'Actualizar entrega' : 'Enviar entrega'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _enviando ? null : () => _enviar(soloGuardar: true),
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Guardar para enviar después'),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          actualizando
+              ? 'Al reemplazar la entrega, el docente deberá revisarla y calificarla de nuevo.'
+              : 'Puedes cambiar tu entrega hasta que la actividad cierre.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colores.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }

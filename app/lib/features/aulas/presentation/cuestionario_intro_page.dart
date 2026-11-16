@@ -14,12 +14,15 @@ class CuestionarioIntroPage extends ConsumerStatefulWidget {
     required this.titulo,
     this.descripcion,
     this.cierraEn,
+    this.recursos = const [],
   });
 
   final String actividadId;
   final String titulo;
   final String? descripcion;
   final DateTime? cierraEn;
+  /// Archivos/materiales propios de la actividad.
+  final List<Map<String, dynamic>> recursos;
 
   @override
   ConsumerState<CuestionarioIntroPage> createState() => _CuestionarioIntroPageState();
@@ -51,6 +54,18 @@ class _CuestionarioIntroPageState extends ConsumerState<CuestionarioIntroPage> {
     }
   }
 
+  Future<void> _abrirRecurso(String objetoKey) async {
+    if (objetoKey.isEmpty) return;
+    try {
+      final url = await ref.read(repositorioAcademicoProvider).urlDeObjeto(objetoKey);
+      if (!mounted) return;
+      await abrirEnlace(context, url);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
+    }
+  }
+
   Future<void> _iniciar() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -61,6 +76,89 @@ class _CuestionarioIntroPageState extends ConsumerState<CuestionarioIntroPage> {
       ),
     );
     if (mounted) await _cargar();
+  }
+
+  Future<void> _verRevision() async {
+    try {
+      final intento = await ref
+          .read(repositorioAcademicoProvider)
+          .miIntento(widget.actividadId);
+      if (!mounted) return;
+      if (intento == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay un intento registrado para revisar.')),
+        );
+        return;
+      }
+      final detalle = (intento['detalle'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((fila) => Map<String, dynamic>.from(fila))
+          .toList();
+      await showDialog<void>(
+        context: context,
+        builder: (contexto) => AlertDialog(
+          title: Text('Revisión · ${intento['puntaje']} / ${_cuestionario?['notaMaxima'] ?? 5}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final (indice, respuesta) in detalle.indexed)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                respuesta['acerto'] == true ? Icons.check_circle : Icons.cancel_outlined,
+                                color: respuesta['acerto'] == true ? Colors.green : Theme.of(contexto).colorScheme.error,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${indice + 1}. ${respuesta['enunciado']}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          for (final opcion in ((respuesta['opciones'] as List<dynamic>?) ?? const [])
+                              .whereType<Map>())
+                            Text(
+                              '${((respuesta['elegidas'] as List<dynamic>?) ?? const []).contains('${opcion['id']}') ? '✔ Tu respuesta' : '   '} '
+                              '${opcion['texto']}${opcion['esCorrecta'] == true ? ' (correcta)' : ''}',
+                              style: TextStyle(
+                                color: opcion['esCorrecta'] == true
+                                    ? Colors.green
+                                    : (((respuesta['elegidas'] as List<dynamic>?) ?? const [])
+                                            .contains('${opcion['id']}'))
+                                        ? Theme.of(contexto).colorScheme.error
+                                        : null,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.of(contexto).pop(), child: const Text('Cerrar')),
+          ],
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.mensaje)));
+      }
+    }
   }
 
   @override
@@ -100,20 +198,60 @@ class _CuestionarioIntroPageState extends ConsumerState<CuestionarioIntroPage> {
             ),
           ),
           const SizedBox(height: 16),
+          if (widget.recursos.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Materiales del cuestionario', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final recurso in widget.recursos)
+                          ActionChip(
+                            avatar: const Icon(Icons.attach_file, size: 16),
+                            label: Text('${recurso['nombre'] ?? 'archivo'}'),
+                            onPressed: () => _abrirRecurso('${recurso['objetoKey'] ?? ''}'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (yaRespondido)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: colores.primaryContainer.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.check_circle_outline),
-                  SizedBox(width: 8),
-                  Expanded(child: Text('Ya respondiste este cuestionario. Tu nota ya está registrada.')),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colores.primaryContainer.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle_outline),
+                      SizedBox(width: 8),
+                      Expanded(child: Text('Ya respondiste este cuestionario. Tu nota ya está registrada.')),
+                    ],
+                  ),
+                ),
+                if (_cuestionario?['revisionPermitida'] == true) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _verRevision,
+                    icon: const Icon(Icons.fact_check_outlined),
+                    label: const Text('Ver revisión de mis respuestas'),
+                  ),
                 ],
-              ),
+              ],
             )
           else ...[
             Container(
