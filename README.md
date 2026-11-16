@@ -184,9 +184,12 @@ Académico), **Espacios y horarios** (Admin de Espacios), **Gestión de incidenc
   192/512 y *maskable*; el launcher Android usa los mismos íconos generados con el estilo de la app
   (sin logotipos oficiales). El `index.html` incluye metadatos de PWA, tema y `apple-touch-icon`.
 - **Build web**: `cd app && flutter build web --release --dart-define-from-file=env/prod.json`
-  → salida en `app/build/web` (no versionada).
+  → salida en `app/build/web` (no versionada). Para servir esa build con respaldo de rutas SPA:
+  `node scripts/servir-web.mjs` → <http://localhost:5173> (con `env/dev.json`, apuntando a
+  `http://localhost:3000`).
 - **APK**: `cd app && flutter build apk --release --dart-define-from-file=env/prod.json`
-  → `app/build/app/outputs/flutter-apk/app-release.apk`.
+  → `app/build/app/outputs/flutter-apk/app-release.apk`; en la PC de la demo también se deja una
+  copia en `dist/uniminuto-campus-app-release.apk` (ignorada por Git).
 - **Despliegue preparado** (pendiente solo de credenciales): [`render.yaml`](render.yaml) para la API
   en Render, [`firebase.json`](firebase.json) + [`.firebaserc`](.firebaserc) para Firebase Hosting y
   [`infra/r2/cors.json`](infra/r2/cors.json) para el datalake en Cloudflare R2. Los pasos completos,
