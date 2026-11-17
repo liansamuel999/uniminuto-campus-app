@@ -165,7 +165,7 @@ class _PlanificacionTabState extends ConsumerState<PlanificacionTab> {
       builder: (contexto) => AlertDialog(
         title: const Text('Quitar curso del periodo'),
         content: Text(
-          'Se eliminarán el curso «${grupo['asignatura']}» (grupo ${grupo['grupo']}), '
+          'Se eliminarán el curso «${grupo['asignatura']}» (código ${grupo['codigoCurso']}), '
           'sus horarios, su aula virtual y las inscripciones. El horario de los estudiantes '
           'se actualizará y dejará de mostrar esa materia.',
         ),
@@ -239,7 +239,7 @@ class _PlanificacionTabState extends ConsumerState<PlanificacionTab> {
               children: [
                 Expanded(
                   child: Text(
-                    '${grupo['codigoAsignatura']} · ${grupo['asignatura']} (Grupo ${grupo['grupo']})',
+                    '${grupo['codigoAsignatura']} · ${grupo['asignatura']} (Curso ${grupo['codigoCurso']})',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),

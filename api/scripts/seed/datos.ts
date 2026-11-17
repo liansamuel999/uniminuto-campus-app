@@ -40,34 +40,38 @@ export const USUARIOS: readonly UsuarioSemilla[] = [
 ];
 
 export const ASIGNATURAS = [
-  { codigo: 'IS-101', nombre: 'Programación I', creditos: 4, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: false },
-  { codigo: 'IS-201', nombre: 'Bases de Datos', creditos: 3, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: true },
-  { codigo: 'IS-301', nombre: 'Redes de Computadores', creditos: 3, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: true },
-  { codigo: 'IS-401', nombre: 'Ingeniería de Software', creditos: 4, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: false },
+  { codigo: 'IS-101', nombre: 'Programación I', creditos: 4, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: false, codigoCurso: '1234' },
+  { codigo: 'IS-201', nombre: 'Bases de Datos', creditos: 3, docente: 'carolina.pena@demo.uniminuto.test', requiereLaboratorio: true, codigoCurso: '1235' },
+  { codigo: 'IS-301', nombre: 'Redes de Computadores', creditos: 3, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: true, codigoCurso: '1236' },
+  { codigo: 'IS-401', nombre: 'Ingeniería de Software', creditos: 4, docente: 'diego.suarez@demo.uniminuto.test', requiereLaboratorio: false, codigoCurso: '1237' },
 ] as const;
 
-/** Grupos adicionales para mostrar el planificador de salones en acción. */
+/** Cursos adicionales de la misma asignatura (cada uno con su propio código de curso). */
 export const GRUPOS_EXTRA: ReadonlyArray<{
   readonly asignatura: string;
+  /** Código interno para la restricción histórica (asignatura, periodo, número). */
   readonly numero: string;
+  /** Código único del curso (NRC o equivalente). */
+  readonly codigoCurso: string;
   readonly docente: string;
   readonly estudiantes: readonly string[];
   /** [día ISO, inicio, fin, salón sugerido]. Un salón repetido a la misma hora es un conflicto. */
   readonly horarios: ReadonlyArray<readonly [number, string, string, string]>;
 }> = [
   {
-    // Segundo grupo del laboratorio de Bases de Datos: la semilla lo deja a la misma hora y en
-    // el mismo salón que el grupo 01 para que "Planificar salones" resuelva el choque.
+    // Segundo curso de Bases de Datos: mismo programa, otro código (1235 vs 2235).
     asignatura: 'IS-201',
     numero: '02',
+    codigoCurso: '2235',
     docente: 'carolina.pena@demo.uniminuto.test',
     estudiantes: ['maria.cardenas@demo.uniminuto.test'],
     horarios: [[2, '09:00', '11:00', 'B-204']],
   },
   {
-    // Grupo sin horario: el admin académico le agrega la clase y el sistema le asigna salón solo.
+    // Curso sin horario: el admin académico le agrega la clase y el sistema le asigna salón solo.
     asignatura: 'IS-301',
     numero: '02',
+    codigoCurso: '2236',
     docente: 'diego.suarez@demo.uniminuto.test',
     estudiantes: ['andres.molina@demo.uniminuto.test'],
     horarios: [],

@@ -26,10 +26,13 @@ export interface Grupo {
   asignaturaId: string;
   asignatura: string;
   codigoAsignatura: string;
+  /** Código único del curso (NRC o equivalente): es lo que se muestra. */
+  codigoCurso: string;
   periodoId: string;
   periodo: string;
   docenteId: string | null;
   docente: string | null;
+  /** Detalle interno heredado; no se muestra al usuario. */
   numeroGrupo: string;
   estudiantes: number;
 }
@@ -73,13 +76,13 @@ export interface RepositorioAdminAcademico {
   crearGrupo(datos: {
     asignaturaId: string;
     periodoId: string;
-    numeroGrupo: string;
+    codigoCurso: string;
     docenteId?: string | null;
   }): Promise<Grupo | null>;
   actualizarGrupo(
     uidActor: string,
     id: string,
-    datos: { numeroGrupo?: string; docenteId?: string | null },
+    datos: { codigoCurso?: string; docenteId?: string | null },
   ): Promise<Grupo | null>;
   eliminarGrupo(id: string): Promise<boolean>;
   listarInscripciones(filtros: { grupoId?: string; periodoId?: string }): Promise<Inscripcion[]>;
@@ -119,7 +122,7 @@ async function registrarAuditoria(
 
 const CONSULTA_GRUPO = `
   SELECT g.id, g.asignatura_id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
-         g.periodo_id, p.codigo AS periodo, g.docente_id,
+         g.codigo_curso, g.periodo_id, p.codigo AS periodo, g.docente_id,
          d.nombres || ' ' || d.apellidos AS docente, g.numero_grupo,
          (SELECT COUNT(*)::int FROM inscripcion i
           WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes
@@ -131,7 +134,7 @@ const CONSULTA_GRUPO = `
 
 const CONSULTA_INSCRIPCION = `
   SELECT i.id, i.estudiante_id, e.nombres || ' ' || e.apellidos AS estudiante,
-         i.grupo_id, asg.nombre AS asignatura, g.numero_grupo AS grupo,
+         i.grupo_id, asg.nombre AS asignatura, g.codigo_curso AS grupo,
          p.codigo AS periodo, i.estado
   FROM inscripcion i
   JOIN usuario e ON e.id = i.estudiante_id
@@ -163,6 +166,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignatura_id: string;
     asignatura: string;
     codigo_asignatura: string;
+    codigo_curso: string;
     periodo_id: string;
     periodo: string;
     docente_id: string | null;
@@ -174,6 +178,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignaturaId: fila.asignatura_id,
     asignatura: fila.asignatura,
     codigoAsignatura: fila.codigo_asignatura,
+    codigoCurso: fila.codigo_curso,
     periodoId: fila.periodo_id,
     periodo: fila.periodo,
     docenteId: fila.docente_id,
@@ -351,7 +356,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
       const resultado = await pool.query(
         `${CONSULTA_GRUPO}
          ${condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : ''}
-         ORDER BY p.codigo DESC, asg.nombre, g.numero_grupo`,
+         ORDER BY p.codigo DESC, asg.nombre, g.codigo_curso`,
         valores,
       );
       return resultado.rows.map(filaGrupo);
@@ -360,16 +365,16 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     async crearGrupo(datos) {
       try {
         const resultado = await pool.query(
-          `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [datos.asignaturaId, datos.periodoId, datos.docenteId ?? null, datos.numeroGrupo],
+          `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
+           VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+          [datos.asignaturaId, datos.periodoId, datos.docenteId ?? null, datos.codigoCurso],
         );
         const id = resultado.rows[0]?.id;
         if (!id) return null;
         const grupo = await pool.query(`${CONSULTA_GRUPO} WHERE g.id = $1`, [id]);
         return grupo.rows[0] ? filaGrupo(grupo.rows[0]) : null;
       } catch (error) {
-        if (esDuplicado(error)) throw errores.conflicto('Ya existe ese grupo para la asignatura y periodo');
+        if (esDuplicado(error)) throw errores.conflicto('Ya existe un curso con ese código');
         if (esConflictoDeIntegridad(error)) {
           throw errores.datosInvalidos('La asignatura, el periodo o el docente no existen');
         }
@@ -388,12 +393,13 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
 
           await cliente.query(
             `UPDATE grupo SET
+               codigo_curso = COALESCE($2, codigo_curso),
                numero_grupo = COALESCE($2, numero_grupo),
                docente_id = CASE WHEN $3::boolean THEN $4::uuid ELSE docente_id END
              WHERE id = $1`,
             [
               id,
-              datos.numeroGrupo ?? null,
+              datos.codigoCurso ?? null,
               datos.docenteId !== undefined,
               datos.docenteId ?? null,
             ],
@@ -407,7 +413,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
           return grupo.rows[0] ? filaGrupo(grupo.rows[0]) : null;
         });
       } catch (error) {
-        if (esDuplicado(error)) throw errores.conflicto('Ya existe ese grupo para la asignatura y periodo');
+        if (esDuplicado(error)) throw errores.conflicto('Ya existe un curso con ese código');
         if (esConflictoDeIntegridad(error)) throw errores.datosInvalidos('El docente indicado no existe');
         throw error;
       }
@@ -555,14 +561,25 @@ const esquemaGrupo = z
   .object({
     asignaturaId: z.string().uuid(),
     periodoId: z.string().uuid(),
-    numeroGrupo: z.string().trim().min(1).max(5),
+    codigoCurso: z
+      .string()
+      .trim()
+      .min(3)
+      .max(20)
+      .regex(/^[A-Za-z0-9-]+$/, 'Usa letras, números o guiones'),
     docenteId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
 const esquemaGrupoParcial = z
   .object({
-    numeroGrupo: z.string().trim().min(1).max(5).optional(),
+    codigoCurso: z
+      .string()
+      .trim()
+      .min(3)
+      .max(20)
+      .regex(/^[A-Za-z0-9-]+$/, 'Usa letras, números o guiones')
+      .optional(),
     docenteId: z.string().uuid().nullable().optional(),
   })
   .strict();

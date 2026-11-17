@@ -10,6 +10,8 @@ export interface AulaResumen {
   nombre: string;
   asignatura: string;
   codigo: string;
+  /** Código único del curso (NRC o equivalente): identifica la oferta. */
+  codigoCurso: string;
   periodo: string;
   grupo: string;
   docente: string | null;
@@ -110,8 +112,9 @@ const BASE_AULA = `
 `;
 
 const CAMPOS_AULA = `
-  SELECT a.id, a.nombre, asg.nombre AS asignatura, asg.codigo, p.codigo AS periodo,
-         g.numero_grupo AS grupo, d.nombres || ' ' || d.apellidos AS docente,
+  SELECT a.id, a.nombre, asg.nombre AS asignatura, asg.codigo, g.codigo_curso,
+         p.codigo AS periodo, g.numero_grupo AS grupo,
+         d.nombres || ' ' || d.apellidos AS docente,
          CASE WHEN g.docente_id = u.id THEN 'DOCENTE' ELSE 'ESTUDIANTE' END AS rol_en_aula
 `;
 
@@ -123,6 +126,7 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
         nombre: string;
         asignatura: string;
         codigo: string;
+        codigo_curso: string;
         periodo: string;
         grupo: string;
         docente: string | null;
@@ -130,7 +134,7 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
       }>(
         `${CAMPOS_AULA} ${BASE_AULA}
          WHERE ${ACCESO}
-         ORDER BY asg.nombre`,
+         ORDER BY asg.nombre, g.codigo_curso`,
         [uidFirebase, esAdmin],
       );
       return resultado.rows.map((fila) => ({
@@ -138,6 +142,7 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
         nombre: fila.nombre,
         asignatura: fila.asignatura,
         codigo: fila.codigo,
+        codigoCurso: fila.codigo_curso,
         periodo: fila.periodo,
         grupo: fila.grupo,
         docente: fila.docente,
@@ -151,6 +156,7 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
         nombre: string;
         asignatura: string;
         codigo: string;
+        codigo_curso: string;
         periodo: string;
         grupo: string;
         docente: string | null;
@@ -217,6 +223,7 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
         nombre: filaAula.nombre,
         asignatura: filaAula.asignatura,
         codigo: filaAula.codigo,
+        codigoCurso: filaAula.codigo_curso,
         periodo: filaAula.periodo,
         grupo: filaAula.grupo,
         docente: filaAula.docente,

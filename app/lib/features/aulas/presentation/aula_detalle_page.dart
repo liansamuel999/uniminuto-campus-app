@@ -203,7 +203,7 @@ class _AulaDetallePageState extends ConsumerState<AulaDetallePage> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${detalle['codigo']} · Grupo ${detalle['grupo']} · ${detalle['periodo']}',
+              '${detalle['codigo']} · Curso ${detalle['codigoCurso'] ?? ''} · ${detalle['periodo']}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 2),

@@ -709,17 +709,18 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       const asignaturaId = filaAsignatura.rows[0]!.id;
 
       const filaGrupo = await cliente.query<{ id: string }>(
-        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo)
-         VALUES ($1, $2, $3, '01')
-         ON CONFLICT (asignatura_id, periodo_id, numero_grupo) DO UPDATE SET docente_id = EXCLUDED.docente_id
+        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
+         VALUES ($1, $2, $3, '01', $4)
+         ON CONFLICT (asignatura_id, periodo_id, numero_grupo)
+         DO UPDATE SET docente_id = EXCLUDED.docente_id, codigo_curso = EXCLUDED.codigo_curso
          RETURNING id`,
-        [asignaturaId, periodoId, idPorCorreo.get(asignatura.docente) ?? null],
+        [asignaturaId, periodoId, idPorCorreo.get(asignatura.docente) ?? null, asignatura.codigoCurso],
       );
       const grupoId = filaGrupo.rows[0]!.id;
 
       await sembrarAulaVirtual(cliente, {
         grupoId,
-        nombre: `${asignatura.nombre} · Grupo 01`,
+        nombre: `${asignatura.nombre} · Curso ${asignatura.codigoCurso}`,
         docenteUid: usuariosSembrados.find((usuario) => usuario.correo === asignatura.docente)?.uid,
         estudiantes: usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE'),
       });
@@ -755,11 +756,12 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       const asignaturaId = asignatura.rows[0]?.id;
       if (!asignaturaId) continue;
       const filaGrupo = await cliente.query<{ id: string }>(
-        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (asignatura_id, periodo_id, numero_grupo) DO UPDATE SET docente_id = EXCLUDED.docente_id
+        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (asignatura_id, periodo_id, numero_grupo)
+         DO UPDATE SET docente_id = EXCLUDED.docente_id, codigo_curso = EXCLUDED.codigo_curso
          RETURNING id`,
-        [asignaturaId, periodoId, idPorCorreo.get(extra.docente) ?? null, extra.numero],
+        [asignaturaId, periodoId, idPorCorreo.get(extra.docente) ?? null, extra.numero, extra.codigoCurso],
       );
       const grupoId = filaGrupo.rows[0]!.id;
       const estudiantesExtra = usuariosSembrados.filter((usuario) =>
@@ -774,7 +776,7 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
       }
       await sembrarAulaVirtual(cliente, {
         grupoId,
-        nombre: `${extra.asignatura} · Grupo ${extra.numero}`,
+        nombre: `${extra.asignatura} · Curso ${extra.codigoCurso}`,
         docenteUid: usuariosSembrados.find((usuario) => usuario.correo === extra.docente)?.uid,
         estudiantes: estudiantesExtra,
       });

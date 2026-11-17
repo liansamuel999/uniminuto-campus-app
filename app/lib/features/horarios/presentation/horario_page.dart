@@ -119,7 +119,7 @@ class _HorarioPageState extends ConsumerState<HorarioPage> {
         ),
         title: Text('${bloque['asignatura']}'),
         subtitle: Text(
-          '${bloque['codigo']} · Grupo ${bloque['grupo']}\n'
+          '${bloque['codigo']} · Curso ${bloque['codigoCurso'] ?? bloque['grupo']}\n'
           'Salón ${salon['codigo'] ?? '—'} · ${salon['edificio'] ?? '—'}, piso ${salon['piso'] ?? '—'}'
           '${docente == null ? '' : '\nDocente: $docente'}',
         ),
@@ -140,7 +140,7 @@ class _HorarioPageState extends ConsumerState<HorarioPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${bloque['asignatura']} · Grupo ${bloque['grupo']}'),
+            Text('${bloque['asignatura']} · Curso ${bloque['codigoCurso'] ?? bloque['grupo']}'),
             const SizedBox(height: 8),
             Text('${salon['tipo'] ?? 'AULA'} · capacidad ${salon['capacidad'] ?? '—'}'),
             Text('${salon['edificio'] ?? '—'} (${salon['edificioCodigo'] ?? '—'}), piso ${salon['piso'] ?? '—'}'),

@@ -6,32 +6,9 @@ import '../../../core/providers/app_providers.dart';
 import '../../../core/session/session_controller.dart';
 import '../../../core/utils/formato.dart';
 import 'aula_detalle_page.dart';
-import 'curso_grupos_page.dart';
 
-/// Un curso se muestra por su **código de asignatura** (no por cada grupo). Un docente con
-/// IS-201 grupos 01 y 02 ve un solo curso y dentro elige el grupo.
-class _CursoAgrupado {
-  _CursoAgrupado({
-    required this.codigo,
-    required this.periodo,
-    required this.asignatura,
-    required this.aulas,
-  });
-
-  final String codigo;
-  final String periodo;
-  final String asignatura;
-  final List<Map<String, dynamic>> aulas;
-
-  String get docente {
-    final docentes = aulas.map((aula) => '${aula['docente'] ?? ''}').toSet()..remove('');
-    return docentes.length == 1 ? docentes.first : (docentes.isEmpty ? 'Sin asignar' : 'Varios');
-  }
-
-  bool get esDocente => aulas.any((aula) => '${aula['rolEnAula']}' == 'DOCENTE');
-}
-
-/// Lista de cursos del usuario con la sección «Próximas entregas» al inicio (solo estudiantes).
+/// Lista de cursos del usuario. Cada curso se identifica por su **código de curso** (NRC), no por
+/// un número de grupo: dos ofertas de la misma asignatura son dos cursos con códigos distintos.
 class AulasPage extends ConsumerStatefulWidget {
   const AulasPage({super.key});
 
@@ -41,7 +18,6 @@ class AulasPage extends ConsumerStatefulWidget {
 
 class _AulasPageState extends ConsumerState<AulasPage> {
   List<Map<String, dynamic>> _aulas = const [];
-  List<_CursoAgrupado> _cursos = const [];
   List<Map<String, dynamic>> _proximas = const [];
   bool _cargando = true;
   String? _error;
@@ -70,7 +46,6 @@ class _AulasPageState extends ConsumerState<AulasPage> {
       if (!mounted) return;
       setState(() {
         _aulas = _mapas(resultados[0]);
-        _cursos = _agruparCursos(_aulas);
         // La API ya excluye entregas e intentos hechos; se ordena por fecha y se limita la lista.
         _proximas = esEstudiante ? _mapas(resultados[1]).take(6).toList() : const [];
       });
@@ -85,28 +60,6 @@ class _AulasPageState extends ConsumerState<AulasPage> {
 
   static List<Map<String, dynamic>> _mapas(List<dynamic> datos) =>
       datos.whereType<Map>().map((fila) => Map<String, dynamic>.from(fila)).toList();
-
-  static List<_CursoAgrupado> _agruparCursos(List<Map<String, dynamic>> aulas) {
-    final mapa = <String, _CursoAgrupado>{};
-    for (final aula in aulas) {
-      final codigo = '${aula['codigo'] ?? ''}';
-      final periodo = '${aula['periodo'] ?? ''}';
-      final clave = '$codigo|$periodo';
-      final existente = mapa[clave];
-      if (existente == null) {
-        mapa[clave] = _CursoAgrupado(
-          codigo: codigo,
-          periodo: periodo,
-          asignatura: '${aula['asignatura'] ?? ''}',
-          aulas: [aula],
-        );
-      } else {
-        existente.aulas.add(aula);
-      }
-    }
-    return mapa.values.toList()
-      ..sort((a, b) => a.asignatura.compareTo(b.asignatura));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,8 +92,8 @@ class _AulasPageState extends ConsumerState<AulasPage> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            if (!_cargando && _cursos.isEmpty) const Text('No tienes cursos asignados.'),
-            for (final curso in _cursos) _tarjetaCurso(context, curso),
+            if (!_cargando && _aulas.isEmpty) const Text('No tienes cursos asignados.'),
+            for (final aula in _aulas) _tarjetaCurso(context, aula),
           ],
         ),
       ),
@@ -180,7 +133,7 @@ class _AulasPageState extends ConsumerState<AulasPage> {
   }
 
   /// Tarjeta de tamaño fijo: los títulos y fechas largos se recortan para que no cambie el
-  /// espaciado entre cursos (corrección de la muestra).
+  /// espaciado entre cursos.
   Widget _tarjetaProxima(BuildContext context, Map<String, dynamic> actividad) {
     final cierre = DateTime.tryParse('${actividad['cierraEn']}');
     final tipo = '${actividad['tipo']}';
@@ -243,34 +196,19 @@ class _AulasPageState extends ConsumerState<AulasPage> {
     );
   }
 
-  Widget _tarjetaCurso(BuildContext context, _CursoAgrupado curso) {
+  Widget _tarjetaCurso(BuildContext context, Map<String, dynamic> aula) {
     final colores = Theme.of(context).colorScheme;
-    final unico = curso.aulas.length == 1;
+    final esDocente = '${aula['rolEnAula']}' == 'DOCENTE';
+    final codigoCurso = '${aula['codigoCurso'] ?? ''}';
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          if (unico) {
-            final aula = curso.aulas.first;
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AulaDetallePage(aulaId: '${aula['id']}', titulo: curso.asignatura),
-              ),
-            );
-          } else {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => CursoGruposPage(
-                  asignatura: curso.asignatura,
-                  codigo: curso.codigo,
-                  periodo: curso.periodo,
-                  aulas: curso.aulas,
-                ),
-              ),
-            );
-          }
-        },
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AulaDetallePage(aulaId: '${aula['id']}', titulo: '${aula['asignatura']}'),
+          ),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
@@ -285,23 +223,30 @@ class _AulasPageState extends ConsumerState<AulasPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      curso.asignatura,
+                      '${aula['asignatura']}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${curso.codigo} · ${curso.periodo} · '
-                      '${curso.aulas.length} grupo(s) · Docente: ${curso.docente}',
+                      'Código de curso $codigoCurso · ${aula['periodo']} · '
+                      'Docente: ${aula['docente'] ?? 'Sin asignar'}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    if (esDocente)
+                      Text(
+                        '${aula['codigo']} · ${aula['nombre']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
                   ],
                 ),
               ),
-              if (curso.esDocente)
+              if (esDocente)
                 const Chip(label: Text('Docente'), visualDensity: VisualDensity.compact)
               else
                 const Icon(Icons.chevron_right),

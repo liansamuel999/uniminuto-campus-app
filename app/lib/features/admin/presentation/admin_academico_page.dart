@@ -5,7 +5,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
 import 'planificacion_tab.dart';
 
-/// Panel del Admin Académico: periodos, asignaturas, grupos, inscripciones y horarios/salones.
+/// Panel del Admin Académico: periodos, asignaturas, cursos, inscripciones y horarios/salones.
 class AdminAcademicoPage extends ConsumerWidget {
   const AdminAcademicoPage({super.key});
 
@@ -21,7 +21,7 @@ class AdminAcademicoPage extends ConsumerWidget {
             tabs: [
               Tab(text: 'Periodos'),
               Tab(text: 'Asignaturas'),
-              Tab(text: 'Grupos'),
+              Tab(text: 'Cursos'),
               Tab(text: 'Inscripciones'),
               Tab(text: 'Horarios y salones'),
             ],
@@ -408,7 +408,7 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
   }
 }
 
-// ───────────────────────────────── Grupos ───────────────────────────────────
+// ───────────────────────────────── Cursos ────────────────────────────────────
 class _GruposTab extends ConsumerStatefulWidget {
   const _GruposTab();
 
@@ -500,7 +500,7 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _asignaturas.isEmpty || _periodos.isEmpty ? null : _crear,
         icon: const Icon(Icons.add),
-        label: const Text('Grupo'),
+        label: const Text('Curso'),
       ),
       body: ListView(
         // Espacio inferior para que el botón flotante «crear» no tape el menú de acciones
@@ -513,10 +513,10 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
             Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
-                leading: const Icon(Icons.groups_outlined),
-                title: Text('${grupo['asignatura']} · ${grupo['codigoAsignatura']}'),
+                leading: const Icon(Icons.school_outlined),
+                title: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']}'),
                 subtitle: Text(
-                  'Grupo ${grupo['numeroGrupo']} · ${grupo['periodo']} · '
+                  '${grupo['codigoAsignatura']} · ${grupo['periodo']} · '
                   '${grupo['docente'] ?? 'Sin docente'} · ${grupo['estudiantes']} estudiantes',
                 ),
                 trailing: PopupMenuButton<String>(
@@ -525,7 +525,7 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
                     if (valor == 'eliminar') _eliminar(grupo);
                   },
                   itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'asignar', child: Text('Asignar docente')),
+                    PopupMenuItem(value: 'asignar', child: Text('Editar / asignar docente')),
                     PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
                   ],
                 ),
@@ -550,7 +550,7 @@ class _DialogoGrupo extends StatefulWidget {
 class _DialogoGrupoState extends State<_DialogoGrupo> {
   String? _asignaturaId;
   String? _periodoId;
-  final _numero = TextEditingController(text: '01');
+  final _codigo = TextEditingController();
 
   @override
   void initState() {
@@ -561,14 +561,14 @@ class _DialogoGrupoState extends State<_DialogoGrupo> {
 
   @override
   void dispose() {
-    _numero.dispose();
+    _codigo.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Nuevo grupo'),
+      title: const Text('Nuevo curso'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -591,7 +591,14 @@ class _DialogoGrupoState extends State<_DialogoGrupo> {
               ],
               onChanged: (valor) => setState(() => _periodoId = valor),
             ),
-            TextField(controller: _numero, decoration: const InputDecoration(labelText: 'Número de grupo')),
+            TextField(
+              controller: _codigo,
+              decoration: const InputDecoration(
+                labelText: 'Código único del curso',
+                hintText: 'Ej.: 1234 o IS201-2026-01',
+                helperText: 'Dos cursos de la misma materia se distinguen por este código',
+              ),
+            ),
           ],
         ),
       ),
@@ -601,9 +608,9 @@ class _DialogoGrupoState extends State<_DialogoGrupo> {
           onPressed: () => Navigator.of(context).pop({
             'asignaturaId': _asignaturaId,
             'periodoId': _periodoId,
-            'numeroGrupo': _numero.text.trim(),
+            'codigoCurso': _codigo.text.trim(),
           }),
-          child: const Text('Crear'),
+          child: const Text('Crear curso'),
         ),
       ],
     );
@@ -621,8 +628,6 @@ class _DialogoAsignacion extends StatefulWidget {
 }
 
 class _DialogoAsignacionState extends State<_DialogoAsignacion> {
-  late final TextEditingController _numero =
-      TextEditingController(text: '${widget.grupo['numeroGrupo'] ?? '01'}');
   String? _docenteId;
 
   @override
@@ -632,20 +637,13 @@ class _DialogoAsignacionState extends State<_DialogoAsignacion> {
   }
 
   @override
-  void dispose() {
-    _numero.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('${widget.grupo['asignatura']} · Grupo ${widget.grupo['numeroGrupo']}'),
+      title: Text('${widget.grupo['asignatura']} · Curso ${widget.grupo['codigoCurso']}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _numero, decoration: const InputDecoration(labelText: 'Número de grupo')),
             DropdownButtonFormField<String?>(
               initialValue: _docenteId,
               decoration: const InputDecoration(labelText: 'Docente'),
@@ -665,10 +663,7 @@ class _DialogoAsignacionState extends State<_DialogoAsignacion> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop({
-            'numeroGrupo': _numero.text.trim(),
-            'docenteId': _docenteId,
-          }),
+          onPressed: () => Navigator.of(context).pop({'docenteId': _docenteId}),
           child: const Text('Guardar'),
         ),
       ],
@@ -816,12 +811,12 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
         children: [
           DropdownButtonFormField<String>(
             initialValue: _grupoId,
-            decoration: const InputDecoration(labelText: 'Grupo'),
+            decoration: const InputDecoration(labelText: 'Curso'),
             items: [
               for (final grupo in _grupos)
                 DropdownMenuItem(
                   value: '${grupo['id']}',
-                  child: Text('${grupo['asignatura']} · ${grupo['periodo']} · ${grupo['numeroGrupo']}'),
+                  child: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']} · ${grupo['periodo']}'),
                 ),
             ],
             onChanged: _cambiarGrupo,

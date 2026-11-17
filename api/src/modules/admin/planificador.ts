@@ -17,6 +17,7 @@ interface HorarioPlan {
   grupoId: string;
   asignatura: string;
   codigoAsignatura: string;
+  codigoCurso: string;
   grupo: string;
   periodo: string;
   salonId: string;
@@ -32,6 +33,7 @@ interface GrupoPlan {
   id: string;
   asignatura: string;
   codigoAsignatura: string;
+  codigoCurso: string;
   grupo: string;
   periodo: string;
   docente: string | null;
@@ -111,6 +113,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       grupo_id: string;
       asignatura: string;
       codigo_asignatura: string;
+      codigo_curso: string;
       grupo: string;
       periodo: string;
       salon_id: string;
@@ -122,7 +125,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       requiere_laboratorio: boolean;
     }>(
       `SELECT h.id, h.grupo_id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
-              g.numero_grupo AS grupo, p.codigo AS periodo,
+              g.codigo_curso, g.numero_grupo AS grupo, p.codigo AS periodo,
               h.salon_id, s.codigo AS salon, h.dia_semana, h.hora_inicio, h.hora_fin,
               (SELECT COUNT(*)::int FROM inscripcion i WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes,
               asg.requiere_laboratorio
@@ -131,13 +134,14 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
        JOIN asignatura asg ON asg.id = g.asignatura_id
        JOIN periodo p ON p.id = g.periodo_id
        JOIN salon s ON s.id = h.salon_id
-       ORDER BY p.codigo DESC, asg.nombre, h.dia_semana, h.hora_inicio`,
+       ORDER BY p.codigo DESC, asg.nombre, g.codigo_curso, h.dia_semana, h.hora_inicio`,
     );
     return resultado.rows.map((fila) => ({
       id: fila.id,
       grupoId: fila.grupo_id,
       asignatura: fila.asignatura,
       codigoAsignatura: fila.codigo_asignatura,
+      codigoCurso: fila.codigo_curso,
       grupo: fila.grupo,
       periodo: fila.periodo,
       salonId: fila.salon_id,
@@ -187,13 +191,14 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       id: string;
       asignatura: string;
       codigo_asignatura: string;
+      codigo_curso: string;
       grupo: string;
       periodo: string;
       requiere_laboratorio: boolean;
       estudiantes: number;
     }>(
       `SELECT g.id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
-              g.numero_grupo AS grupo, p.codigo AS periodo, asg.requiere_laboratorio,
+              g.codigo_curso, g.numero_grupo AS grupo, p.codigo AS periodo, asg.requiere_laboratorio,
               (SELECT COUNT(*)::int FROM inscripcion i WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes
        FROM grupo g
        JOIN asignatura asg ON asg.id = g.asignatura_id
@@ -226,6 +231,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       grupoId: grupo.id,
       asignatura: grupo.asignatura,
       codigoAsignatura: grupo.codigo_asignatura,
+      codigoCurso: grupo.codigo_curso,
       grupo: grupo.grupo,
       periodo: grupo.periodo,
       salonId: '',
@@ -272,6 +278,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
           id: string;
           asignatura: string;
           codigo_asignatura: string;
+          codigo_curso: string;
           grupo: string;
           periodo: string;
           docente: string | null;
@@ -279,7 +286,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
           requiere_laboratorio: boolean;
         }>(
           `SELECT g.id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
-                  g.numero_grupo AS grupo, p.codigo AS periodo,
+                  g.codigo_curso, g.numero_grupo AS grupo, p.codigo AS periodo,
                   d.nombres || ' ' || d.apellidos AS docente,
                   (SELECT COUNT(*)::int FROM inscripcion i WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes,
                   asg.requiere_laboratorio
@@ -287,7 +294,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
            JOIN asignatura asg ON asg.id = g.asignatura_id
            JOIN periodo p ON p.id = g.periodo_id
            LEFT JOIN usuario d ON d.id = g.docente_id
-           ORDER BY p.codigo DESC, asg.nombre, g.numero_grupo`,
+           ORDER BY p.codigo DESC, asg.nombre, g.codigo_curso`,
         ),
         cargarSalones(),
         cargarHorarios(),
@@ -297,6 +304,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
           id: fila.id,
           asignatura: fila.asignatura,
           codigoAsignatura: fila.codigo_asignatura,
+          codigoCurso: fila.codigo_curso,
           grupo: fila.grupo,
           periodo: fila.periodo,
           docente: fila.docente,
@@ -347,7 +355,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
         }
         if (!salon) {
           resultado.sinSalon.push({
-            grupo: `${horario.asignatura} (${horario.grupo})`,
+            grupo: `${horario.asignatura} (curso ${horario.codigoCurso})`,
             asignatura: horario.asignatura,
             motivo: horario.requiereLaboratorio
               ? 'No hay laboratorio libre con capacidad suficiente'

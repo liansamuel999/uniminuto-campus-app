@@ -32,7 +32,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | M. Módulo académico y evaluación docente (Fase 4) | D-70 – D-71 | 4 |
 | N. Administración, incidencias y auditoría (Fase 5) | D-72 – D-74 | 5 |
 | O. Cierre y demo pública (Fase 6) | D-75 – D-77 | 6 |
-| P. Correcciones de experiencia por rol | D-78 – D-88 | 3–6 |
+| P. Correcciones de experiencia por rol | D-78 – D-89 | 3–6 |
 
 ---
 
@@ -221,6 +221,7 @@ el alcance ni los contratos fijados en el documento fuente.
 | D-86 | **Reentrega mientras la actividad esté abierta**: `POST /entregas` actualiza la entrega existente (texto y adjuntos) si `now() <= cierra_en`; al hacerlo invalida la calificación previa y recalcula la nota del corte para que el docente vuelva a revisarla. Además, cada actividad puede tener **archivos propios** (`actividad_recurso`, migración `0012`) que el docente sube desde el editor de la actividad y que el estudiante ve en la tarea o en la antesala del cuestionario; son independientes de los contenidos de la unidad. | Bloquear la entrega tras el primer envío (el cliente lo reportó como error) o adjuntar los archivos como contenidos de la unidad (no aparecen dentro de la actividad). |
 | D-87 | **La subida de archivos usa un cliente HTTP sin el token de la API** (`ApiClient.putBinario`). El interceptor añadía `Authorization` también a la URL prefirmada de MinIO/S3 y el datalake la rechazaba por tener dos mecanismos de autenticación; era la causa de «no se pudo adjuntar» / «no se pudo guardar el contenido». El error de subida ahora se muestra con su detalle en lugar de un mensaje genérico. | Enviar el token a S3 (falla) o subir los binarios a través de la API (rompe la decisión D-56 de URLs prefirmadas). |
 | D-88 | En el editor de actividades la **fecha y la hora de cierre se escriben a mano** (`AAAA-MM-DD` y `HH:MM` en formato 24 h), sin reloj modal: el selector anterior solo aceptaba horas menores de 12 y desbordaba en pantallas pequeñas. En Administración Académica las listas reservan espacio inferior para que el botón flotante «crear» no tape el menú de tres puntos (editar/eliminar) de los últimos elementos. El docente ya **no puede editar el nombre/descripción del curso**: esa edición queda en la oficina académica (API solo para `ADMIN_ACADEMICO`). | Mantener los selectores modales (mal en móvil y con validación de 12 h) o dejar que el docente renombre el curso (rompe la separación de roles). |
+| D-89 | **El curso es la oferta académica y se identifica por su código único de curso** (tipo NRC), no por “grupo 01/02”. `grupo.codigo_curso` es obligatorio, único e ingresado por el admin académico (migraciones `0013` y `0014`); si un docente dicta dos cursos de la misma materia, aparecen como dos cursos con códigos distintos (p. ej. `1235` y `2235`). `numero_grupo` queda como detalle interno de la base y no se muestra. Aplica a Aulas, Mis asignaturas, Horario, Resumen de notas, planificador de salones y Administración Académica (pestaña **Cursos**). | Mantener la agrupación por número de grupo (el cliente la rechazó) o agrupar todo por código de asignatura (ocultaría que son ofertas distintas con docentes/horarios/estudiantes distintos). |
 
 ---
 

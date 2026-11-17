@@ -21,6 +21,8 @@ export interface BloqueHorario {
   horaFin: string;
   asignatura: string;
   codigo: string;
+  /** Código único del curso (NRC): es lo que se muestra en lugar de “grupo”. */
+  codigoCurso: string;
   grupo: string;
   periodo: string;
   salon: SalonUbicacion;
@@ -32,6 +34,7 @@ export interface AsignaturaInscrita {
   grupoId: string;
   asignatura: string;
   codigo: string;
+  codigoCurso: string;
   creditos: number;
   grupo: string;
   periodo: string;
@@ -61,6 +64,7 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
         hora_fin: string;
         asignatura: string;
         codigo: string;
+        codigo_curso: string;
         grupo: string;
         periodo: string;
         salon: string;
@@ -74,7 +78,7 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
       }>(
         `SELECT h.dia_semana, h.hora_inicio, h.hora_fin,
                 asg.nombre AS asignatura, asg.codigo,
-                g.numero_grupo AS grupo, p.codigo AS periodo,
+                g.codigo_curso, g.numero_grupo AS grupo, p.codigo AS periodo,
                 s.codigo AS salon, s.tipo AS salon_tipo, s.capacidad,
                 pi.numero AS piso, e.nombre AS edificio, e.codigo AS edificio_codigo, e.sede,
                 d.nombres || ' ' || d.apellidos AS docente
@@ -101,7 +105,8 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
         horaFin: hora(fila.hora_fin),
         asignatura: fila.asignatura,
         codigo: fila.codigo,
-        grupo: fila.grupo,
+        codigoCurso: fila.codigo_curso,
+        grupo: fila.codigo_curso,
         periodo: fila.periodo,
         salon: {
           codigo: fila.salon,
@@ -122,15 +127,15 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
         grupo_id: string;
         asignatura: string;
         codigo: string;
+        codigo_curso: string;
         creditos: string;
-        grupo: string;
         periodo: string;
         docente: string | null;
         aula_id: string | null;
         evaluada: boolean;
       }>(
         `SELECT i.id AS inscripcion_id, g.id AS grupo_id, asg.nombre AS asignatura, asg.codigo,
-                asg.creditos, g.numero_grupo AS grupo, p.codigo AS periodo,
+                g.codigo_curso, asg.creditos, p.codigo AS periodo,
                 d.nombres || ' ' || d.apellidos AS docente, au.id AS aula_id,
                 EXISTS (SELECT 1 FROM evaluacion_docente ev WHERE ev.inscripcion_id = i.id) AS evaluada
          FROM inscripcion i
@@ -141,7 +146,7 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
          LEFT JOIN usuario d ON d.id = g.docente_id
          LEFT JOIN aula au ON au.grupo_id = g.id
          WHERE u.uid_firebase = $1 AND i.estado = 'ACTIVA'
-         ORDER BY asg.nombre`,
+         ORDER BY p.codigo DESC, asg.nombre, g.codigo_curso`,
         [uidFirebase],
       );
 
@@ -149,14 +154,14 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
         grupo_id: string;
         asignatura: string;
         codigo: string;
+        codigo_curso: string;
         creditos: string;
-        grupo: string;
         periodo: string;
         aula_id: string | null;
         estudiantes: string;
       }>(
-        `SELECT g.id AS grupo_id, asg.nombre AS asignatura, asg.codigo, asg.creditos,
-                g.numero_grupo AS grupo, p.codigo AS periodo, au.id AS aula_id,
+        `SELECT g.id AS grupo_id, asg.nombre AS asignatura, asg.codigo, g.codigo_curso,
+                asg.creditos, p.codigo AS periodo, au.id AS aula_id,
                 (SELECT COUNT(*)::int FROM inscripcion i
                  WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes
          FROM grupo g
@@ -165,79 +170,40 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
          JOIN usuario u ON u.id = g.docente_id
          LEFT JOIN aula au ON au.grupo_id = g.id
          WHERE u.uid_firebase = $1
-         ORDER BY asg.nombre`,
+         ORDER BY p.codigo DESC, asg.nombre, g.codigo_curso`,
         [uidFirebase],
       );
 
-      // Para el docente, un curso es la asignatura (código), no cada grupo: IS-201 puede tener
-      // los grupos 01 y 02 y debe aparecer una sola vez con sus grupos anidados.
-      const cursosDocente = new Map<
-        string,
-        {
-          asignatura: string;
-          codigo: string;
-          creditos: number;
-          periodo: string;
-          grupos: Array<{ grupoId: string; grupo: string; aulaId: string | null; estudiantes: number }>;
-        }
-      >();
-      for (const fila of comoDocente.rows) {
-        const clave = `${fila.codigo}|${fila.periodo}`;
-        const grupo = {
-          grupoId: fila.grupo_id,
-          grupo: fila.grupo,
-          aulaId: fila.aula_id,
-          estudiantes: Number(fila.estudiantes),
-        };
-        const existente = cursosDocente.get(clave);
-        if (existente) {
-          existente.grupos.push(grupo);
-        } else {
-          cursosDocente.set(clave, {
-            asignatura: fila.asignatura,
-            codigo: fila.codigo,
-            creditos: Number(fila.creditos),
-            periodo: fila.periodo,
-            grupos: [grupo],
-          });
-        }
-      }
-
+      // Cada curso (oferta) se identifica por su código único; dos cursos de la misma asignatura
+      // son dos entradas distintas, no “grupo 01/02”.
       return [
         ...comoEstudiante.rows.map((fila) => ({
           inscripcionId: fila.inscripcion_id,
           grupoId: fila.grupo_id,
           asignatura: fila.asignatura,
           codigo: fila.codigo,
+          codigoCurso: fila.codigo_curso,
           creditos: Number(fila.creditos),
-          grupo: fila.grupo,
+          grupo: fila.codigo_curso,
           periodo: fila.periodo,
           docente: fila.docente,
           aulaId: fila.aula_id,
           evaluada: fila.evaluada,
           estudiantes: null,
-          grupos: [
-            {
-              grupoId: fila.grupo_id,
-              grupo: fila.grupo,
-              aulaId: fila.aula_id,
-              estudiantes: null,
-            },
-          ],
         })),
-        ...[...cursosDocente.values()].map((curso) => ({
+        ...comoDocente.rows.map((fila) => ({
           inscripcionId: null,
-          grupoId: curso.grupos[0]!.grupoId,
-          asignatura: curso.asignatura,
-          codigo: curso.codigo,
-          creditos: curso.creditos,
-          grupo: curso.grupos.map((grupo) => grupo.grupo).join(', '),
-          grupos: curso.grupos,
-          periodo: curso.periodo,
+          grupoId: fila.grupo_id,
+          asignatura: fila.asignatura,
+          codigo: fila.codigo,
+          codigoCurso: fila.codigo_curso,
+          creditos: Number(fila.creditos),
+          grupo: fila.codigo_curso,
+          periodo: fila.periodo,
           docente: null,
-          aulaId: curso.grupos[0]!.aulaId,
+          aulaId: fila.aula_id,
           evaluada: false,
-          estudiantes: curso.grupos.reduce((total, grupo) => total + grupo.estudiantes, 0),
+          estudiantes: Number(fila.estudiantes),
         })),
       ];
     },

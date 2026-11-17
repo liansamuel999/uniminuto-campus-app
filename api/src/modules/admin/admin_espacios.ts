@@ -103,7 +103,7 @@ const hora = (valor: string | Date): string => {
 };
 
 const CONSULTA_HORARIO = `
-  SELECT h.id, h.grupo_id, asg.nombre AS asignatura, g.numero_grupo AS grupo,
+  SELECT h.id, h.grupo_id, asg.nombre AS asignatura, g.codigo_curso AS grupo,
          p.codigo AS periodo, h.salon_id, s.codigo AS salon,
          h.dia_semana, h.hora_inicio, h.hora_fin
   FROM horario h

@@ -625,7 +625,7 @@ class _HorariosTabState extends ConsumerState<_HorariosTab> {
               child: ListTile(
                 dense: true,
                 leading: Text(_dias[(horario['diaSemana'] as num?)?.toInt() ?? 1]),
-                title: Text('${horario['asignatura']} · Grupo ${horario['grupo']}'),
+                title: Text('${horario['asignatura']} · Curso ${horario['grupo']}'),
                 subtitle: Text(
                   '${horario['horaInicio']}–${horario['horaFin']} · Salón ${horario['salon']}',
                 ),

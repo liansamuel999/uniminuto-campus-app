@@ -66,7 +66,7 @@ class _AsignaturasPageState extends ConsumerState<AsignaturasPage> {
             if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
             if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (!_cargando && _asignaturas.isEmpty)
-              const Text('No tienes asignaturas inscritas ni grupos asignados en el periodo activo.'),
+              const Text('No tienes cursos inscritos ni asignados en el periodo activo.'),
             for (final asignatura in _asignaturas)
               if (asignatura is Map) _tarjeta(context, asignatura),
           ],
@@ -80,10 +80,7 @@ class _AsignaturasPageState extends ConsumerState<AsignaturasPage> {
     final esEstudiante = asignatura['inscripcionId'] != null;
     final evaluada = asignatura['evaluada'] == true;
     final aulaId = asignatura['aulaId'] as String?;
-    final grupos = (asignatura['grupos'] as List<dynamic>? ?? const [])
-        .whereType<Map>()
-        .map((grupo) => Map<String, dynamic>.from(grupo))
-        .toList();
+    final codigoCurso = '${asignatura['codigoCurso'] ?? ''}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -103,9 +100,7 @@ class _AsignaturasPageState extends ConsumerState<AsignaturasPage> {
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       Text(
-                        esEstudiante
-                            ? '${asignatura['codigo']} · Grupo ${asignatura['grupo']} · ${asignatura['periodo']}'
-                            : '${asignatura['codigo']} · ${grupos.length} grupo(s): ${asignatura['grupo']} · ${asignatura['periodo']}',
+                        '${asignatura['codigo']} · Curso $codigoCurso · ${asignatura['periodo']}',
                         style: TextStyle(fontSize: 12, color: colores.onSurfaceVariant),
                       ),
                     ],
@@ -121,7 +116,7 @@ class _AsignaturasPageState extends ConsumerState<AsignaturasPage> {
             Text(
               esEstudiante
                   ? 'Docente: ${asignatura['docente'] ?? 'Sin asignar'}'
-                  : '${asignatura['estudiantes'] ?? 0} estudiante(s) en ${grupos.length} grupo(s)',
+                  : '${asignatura['estudiantes'] ?? 0} estudiante(s) inscritos',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (esEstudiante)
@@ -143,59 +138,17 @@ class _AsignaturasPageState extends ConsumerState<AsignaturasPage> {
               Align(
                 alignment: Alignment.centerRight,
                 child: OutlinedButton.icon(
-                  onPressed: () => _calificarCurso(asignatura, grupos),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CalificacionesCursoPage(aulaId: aulaId, esDocente: true),
+                    ),
+                  ),
                   icon: const Icon(Icons.grading_outlined),
-                  label: Text(grupos.length > 1 ? 'Calificar por grupo' : 'Calificar entregas'),
+                  label: const Text('Calificar entregas'),
                 ),
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<void> _calificarCurso(
-    Map<dynamic, dynamic> asignatura,
-    List<Map<String, dynamic>> grupos,
-  ) async {
-    if (grupos.length <= 1) {
-      final aulaId = grupos.isNotEmpty ? '${grupos.first['aulaId']}' : '${asignatura['aulaId']}';
-      if (aulaId.isEmpty || aulaId == 'null') return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => CalificacionesCursoPage(aulaId: aulaId, esDocente: true),
-        ),
-      );
-      return;
-    }
-    final elegido = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (contexto) => AlertDialog(
-        title: Text('Grupos de ${asignatura['asignatura']}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final grupo in grupos)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.groups_outlined),
-                title: Text('Grupo ${grupo['grupo']}'),
-                subtitle: Text('${grupo['estudiantes'] ?? 0} estudiante(s)'),
-                onTap: () => Navigator.of(contexto).pop(grupo),
-              ),
-          ],
-        ),
-        actions: [
-          OutlinedButton(onPressed: () => Navigator.of(contexto).pop(), child: const Text('Cancelar')),
-        ],
-      ),
-    );
-    if (elegido == null || !mounted) return;
-    final aulaId = '${elegido['aulaId']}';
-    if (aulaId.isEmpty || aulaId == 'null') return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CalificacionesCursoPage(aulaId: aulaId, esDocente: true),
       ),
     );
   }
