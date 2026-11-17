@@ -169,6 +169,40 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
         [uidFirebase],
       );
 
+      // Para el docente, un curso es la asignatura (código), no cada grupo: IS-201 puede tener
+      // los grupos 01 y 02 y debe aparecer una sola vez con sus grupos anidados.
+      const cursosDocente = new Map<
+        string,
+        {
+          asignatura: string;
+          codigo: string;
+          creditos: number;
+          periodo: string;
+          grupos: Array<{ grupoId: string; grupo: string; aulaId: string | null; estudiantes: number }>;
+        }
+      >();
+      for (const fila of comoDocente.rows) {
+        const clave = `${fila.codigo}|${fila.periodo}`;
+        const grupo = {
+          grupoId: fila.grupo_id,
+          grupo: fila.grupo,
+          aulaId: fila.aula_id,
+          estudiantes: Number(fila.estudiantes),
+        };
+        const existente = cursosDocente.get(clave);
+        if (existente) {
+          existente.grupos.push(grupo);
+        } else {
+          cursosDocente.set(clave, {
+            asignatura: fila.asignatura,
+            codigo: fila.codigo,
+            creditos: Number(fila.creditos),
+            periodo: fila.periodo,
+            grupos: [grupo],
+          });
+        }
+      }
+
       return [
         ...comoEstudiante.rows.map((fila) => ({
           inscripcionId: fila.inscripcion_id,
@@ -182,19 +216,28 @@ export function crearRepositorioHorarios(pool: Pool): RepositorioHorarios {
           aulaId: fila.aula_id,
           evaluada: fila.evaluada,
           estudiantes: null,
+          grupos: [
+            {
+              grupoId: fila.grupo_id,
+              grupo: fila.grupo,
+              aulaId: fila.aula_id,
+              estudiantes: null,
+            },
+          ],
         })),
-        ...comoDocente.rows.map((fila) => ({
+        ...[...cursosDocente.values()].map((curso) => ({
           inscripcionId: null,
-          grupoId: fila.grupo_id,
-          asignatura: fila.asignatura,
-          codigo: fila.codigo,
-          creditos: Number(fila.creditos),
-          grupo: fila.grupo,
-          periodo: fila.periodo,
+          grupoId: curso.grupos[0]!.grupoId,
+          asignatura: curso.asignatura,
+          codigo: curso.codigo,
+          creditos: curso.creditos,
+          grupo: curso.grupos.map((grupo) => grupo.grupo).join(', '),
+          grupos: curso.grupos,
+          periodo: curso.periodo,
           docente: null,
-          aulaId: fila.aula_id,
+          aulaId: curso.grupos[0]!.aulaId,
           evaluada: false,
-          estudiantes: Number(fila.estudiantes),
+          estudiantes: curso.grupos.reduce((total, grupo) => total + grupo.estudiantes, 0),
         })),
       ];
     },

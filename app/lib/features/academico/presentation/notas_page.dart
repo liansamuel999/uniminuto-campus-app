@@ -66,27 +66,62 @@ class _NotasPageState extends ConsumerState<NotasPage> {
     final repo = ref.read(repositorioAcademicoProvider);
     final aulas = await repo.aulas();
     final api = ref.read(apiClientProvider);
-    final resumen = <Map<String, dynamic>>[];
+    // Un curso se agrupa por código de asignatura: IS-201 grupos 01 y 02 es un solo curso.
+    final agrupados = <String, Map<String, dynamic>>{};
     for (final aula in aulas.whereType<Map>()) {
       if ('${aula['rolEnAula']}' != 'DOCENTE') continue;
       final filas = await api.getList('/aulas/${aula['id']}/calificaciones');
       final mapas = filas.whereType<Map>().map((fila) => Map<String, dynamic>.from(fila)).toList();
       final calificadas = mapas.where((fila) => fila['nota'] != null).toList();
-      final promedio = calificadas.isEmpty
-          ? null
-          : calificadas.map((fila) => (fila['nota'] as num).toDouble()).reduce((a, b) => a + b) /
-              calificadas.length;
-      resumen.add({
+      final suma = calificadas.fold<double>(
+        0,
+        (total, fila) => total + (fila['nota'] as num).toDouble(),
+      );
+      final codigo = '${aula['codigo']}';
+      final periodo = '${aula['periodo']}';
+      final clave = '$codigo|$periodo';
+      final grupo = {
         'aulaId': '${aula['id']}',
-        'asignatura': '${aula['asignatura']}',
-        'codigo': '${aula['codigo']}',
         'grupo': '${aula['grupo']}',
-        'actividades': mapas.map((fila) => '${fila['actividadId']}').toSet().length,
         'notas': mapas.length,
         'calificadas': calificadas.length,
-        'promedio': promedio,
-      });
+        'suma': suma,
+      };
+      final existente = agrupados[clave];
+      if (existente == null) {
+        agrupados[clave] = {
+          'asignatura': '${aula['asignatura']}',
+          'codigo': codigo,
+          'periodo': periodo,
+          'notas': mapas.length,
+          'calificadas': calificadas.length,
+          'suma': suma,
+          'aulas': [grupo],
+        };
+      } else {
+        existente['notas'] = (existente['notas'] as int) + mapas.length;
+        existente['calificadas'] = (existente['calificadas'] as int) + calificadas.length;
+        existente['suma'] = (existente['suma'] as double) + suma;
+        (existente['aulas'] as List<Map<String, dynamic>>).add(grupo);
+      }
     }
+    final resumen = agrupados.values.map((curso) {
+      final calificadas = curso['calificadas'] as int;
+      final suma = curso['suma'] as double;
+      final aulasCurso = curso['aulas'] as List<Map<String, dynamic>>;
+      return <String, dynamic>{
+        'aulaId': aulasCurso.first['aulaId'],
+        'asignatura': curso['asignatura'],
+        'codigo': curso['codigo'],
+        'periodo': curso['periodo'],
+        'grupo': aulasCurso.map((grupo) => grupo['grupo']).join(', '),
+        'grupos': aulasCurso,
+        'notas': curso['notas'],
+        'calificadas': calificadas,
+        'promedio': calificadas == 0 ? null : suma / calificadas,
+      };
+    }).toList()
+      ..sort((a, b) => '${a['asignatura']}'.compareTo('${b['asignatura']}'));
     if (mounted) {
       setState(() {
         _resumenCursos = resumen;
@@ -204,23 +239,70 @@ class _NotasPageState extends ConsumerState<NotasPage> {
 
   Widget _tarjetaDocente(BuildContext context, Map<String, dynamic> curso) {
     final promedio = curso['promedio'] as double?;
+    final grupos = (curso['grupos'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((grupo) => Map<String, dynamic>.from(grupo))
+        .toList();
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         leading: const Icon(Icons.menu_book_outlined),
         title: Text('${curso['asignatura']}'),
         subtitle: Text(
-          '${curso['codigo']} · Grupo ${curso['grupo']}\n'
+          '${curso['codigo']} · ${grupos.length} grupo(s) (${curso['grupo']})\n'
           '${curso['calificadas']} de ${curso['notas']} notas puestas'
           '${promedio == null ? '' : ' · promedio ${promedio.toStringAsFixed(2)}'}',
         ),
         isThreeLine: true,
         trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => CalificacionesCursoPage(aulaId: '${curso['aulaId']}', esDocente: true),
-          ),
+        onTap: () => _abrirCalificaciones(context, curso, grupos),
+      ),
+    );
+  }
+
+  Future<void> _abrirCalificaciones(
+    BuildContext context,
+    Map<String, dynamic> curso,
+    List<Map<String, dynamic>> grupos,
+  ) async {
+    if (grupos.length <= 1) {
+      final aulaId = grupos.isNotEmpty ? '${grupos.first['aulaId']}' : '${curso['aulaId']}';
+      if (aulaId.isEmpty || aulaId == 'null') return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CalificacionesCursoPage(aulaId: aulaId, esDocente: true),
         ),
+      );
+      return;
+    }
+    final elegido = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        title: Text('Grupos de ${curso['asignatura']}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final grupo in grupos)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.groups_outlined),
+                title: Text('Grupo ${grupo['grupo']}'),
+                subtitle: Text('${grupo['calificadas']} de ${grupo['notas']} notas puestas'),
+                onTap: () => Navigator.of(contexto).pop(grupo),
+              ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(onPressed: () => Navigator.of(contexto).pop(), child: const Text('Cancelar')),
+        ],
+      ),
+    );
+    if (elegido == null || !context.mounted) return;
+    final aulaId = '${elegido['aulaId']}';
+    if (aulaId.isEmpty || aulaId == 'null') return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CalificacionesCursoPage(aulaId: aulaId, esDocente: true),
       ),
     );
   }

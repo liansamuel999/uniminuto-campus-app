@@ -80,7 +80,7 @@ class _ContenidoEditorPageState extends ConsumerState<ContenidoEditorPage> {
   String _tipoDesdeArchivo(String nombre, String mime) {
     final extension = _extension(nombre);
     if (mime == 'application/pdf' || extension == 'pdf') return 'PDF';
-    if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].contains(extension)) {
+    if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].contains(extension)) {
       return 'IMAGEN';
     }
     if (mime.startsWith('video/') || ['mp4', 'webm', 'mov', 'avi', 'mkv'].contains(extension)) {
@@ -88,6 +88,9 @@ class _ContenidoEditorPageState extends ConsumerState<ContenidoEditorPage> {
     }
     if (['ppt', 'pptx', 'odp', 'key'].contains(extension)) return 'PRESENTACION';
     if (['xls', 'xlsx', 'ods', 'csv'].contains(extension)) return 'HOJA_CALCULO';
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'pkt', 'pka', 'pcap', 'pcapng'].contains(extension)) {
+      return 'ARCHIVO';
+    }
     return 'DOCUMENTO';
   }
 

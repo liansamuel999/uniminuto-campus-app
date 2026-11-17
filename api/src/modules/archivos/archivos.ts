@@ -96,6 +96,7 @@ export function registrarRutasArchivos(
       mime: datos.mime,
       tamano: datos.tamano,
       maximoBytes: env.UPLOAD_MAX_BYTES,
+      nombre: datos.nombre,
     });
     if (!validacion.valido) throw errores.datosInvalidos(validacion.motivo ?? 'Archivo inválido');
 

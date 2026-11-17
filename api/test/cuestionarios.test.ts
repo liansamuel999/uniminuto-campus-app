@@ -61,4 +61,15 @@ describe('validación de archivos (§6.3)', () => {
       expect(MIMES_PERMITIDOS.has(mime)).toBe(true);
     }
   });
+
+  it('acepta archivos por extensión aunque el MIME sea genérico (ZIP, RAR, PKT, 7z)', () => {
+    for (const nombre of ['taller.zip', 'material.rar', 'practica.pkt', 'paquete.7z', 'datos.pcap']) {
+      expect(validarArchivo({ mime: 'application/octet-stream', tamano: 1024, maximoBytes: 52_428_800, nombre }).valido).toBe(true);
+    }
+  });
+
+  it('bloquea ejecutables aunque el tamaño sea válido', () => {
+    expect(validarArchivo({ mime: 'application/octet-stream', tamano: 1024, maximoBytes: 52_428_800, nombre: 'virus.exe' }).valido).toBe(false);
+    expect(validarArchivo({ mime: 'application/octet-stream', tamano: 1024, maximoBytes: 52_428_800, nombre: 'script.ps1' }).valido).toBe(false);
+  });
 });
