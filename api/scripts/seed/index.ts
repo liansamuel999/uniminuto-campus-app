@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import 'dotenv/config';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -6,10 +7,9 @@ import type { PoolClient } from 'pg';
 import { cargarEnv } from '../../src/config/env.js';
 import { crearPool } from '../../src/db/pool.js';
 import {
-  ASIGNATURAS,
   CLAVE_DEMO,
-  GRUPOS_EXTRA,
-  HORARIOS,
+  CURSOS,
+  PROGRAMAS,
   USUARIOS,
   asegurarUsuarioFirebase,
   cuentaDeServicio,
@@ -84,7 +84,7 @@ async function upsertUsuario(
   cliente: PoolClient,
   usuario: (typeof USUARIOS)[number],
   uidFirebase: string,
-  programaId: string,
+  programaId: string | null,
 ): Promise<string> {
   const resultado = await cliente.query<{ id: string }>(
     `INSERT INTO usuario (uid_firebase, nombres, apellidos, correo, documento, codigo_institucional, programa_id, estado)
@@ -110,6 +110,13 @@ async function upsertUsuario(
   );
   const usuarioId = resultado.rows[0]!.id;
 
+  // Sincroniza los roles exactos del usuario (limpia roles obsoletos como ADMIN_ESPACIOS).
+  await cliente.query(
+    `DELETE FROM usuario_rol
+     WHERE usuario_id = $1
+       AND rol_id NOT IN (SELECT id FROM rol WHERE nombre = $2)`,
+    [usuarioId, usuario.rol],
+  );
   await cliente.query(
     `INSERT INTO usuario_rol (usuario_id, rol_id)
      SELECT $1, r.id FROM rol r WHERE r.nombre = $2
@@ -316,10 +323,16 @@ async function sembrarActividadesRealizadasDemo(cliente: PoolClient): Promise<vo
   );
 }
 
-/** Aula virtual con 3 cortes, 2 unidades, contenidos, actividades y una nota de ejemplo. */
-async function sembrarAulaVirtual(
+/** Aula virtual completa: 3 cortes, 3 unidades, materiales, actividades y notas de ejemplo. */
+async function sembrarAulaVirtualDemo(
   cliente: PoolClient,
-  datos: { grupoId: string; nombre: string; docenteUid?: string; estudiantes: UsuarioSembrado[] },
+  datos: {
+    grupoId: string;
+    nombre: string;
+    docenteUid?: string;
+    estudiantes: UsuarioSembrado[];
+    curso: { nombre: string; codigoCurso: string };
+  },
 ): Promise<void> {
   const cortes: Record<number, string> = {};
   for (const [numero, peso] of [[1, 30], [2, 30], [3, 40]] as const) {
@@ -352,8 +365,73 @@ async function sembrarAulaVirtual(
 
   const unidades = [
     { numero: 1, titulo: 'Fundamentos y entorno de trabajo' },
-    { numero: 2, titulo: 'Aplicación práctica y evaluación' },
+    { numero: 2, titulo: 'Aplicación práctica y casos reales' },
+    { numero: 3, titulo: 'Proyecto integrador y evaluación final' },
   ] as const;
+
+  const contenidosPorUnidad: Record<number, Array<{
+    tipo: string;
+    titulo: string;
+    objetoKey?: string;
+    url?: string;
+    mime?: string;
+    descripcion?: string;
+  }>> = {
+    1: [
+      {
+        tipo: 'PDF',
+        titulo: `Guía de estudio · ${datos.curso.nombre}`,
+        objetoKey: 'aulas/demo/guia-unidad.pdf',
+        mime: 'application/pdf',
+        descripcion: 'Material base de la unidad 1',
+      },
+      {
+        tipo: 'ENLACE',
+        titulo: 'Documentación y recursos recomendados',
+        url: 'https://developer.mozilla.org/es/',
+      },
+      {
+        tipo: 'DOCUMENTO',
+        titulo: 'Reglamento y acuerdos del curso',
+        objetoKey: 'aulas/demo/reglamento.pdf',
+        mime: 'application/pdf',
+        descripcion: 'Normas de participación, entregas y evaluación',
+      },
+    ],
+    2: [
+      {
+        tipo: 'VIDEO',
+        titulo: 'Video de la unidad 2',
+        url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+      },
+      {
+        tipo: 'ANUNCIO',
+        titulo: 'Recordatorio de la entrega de la unidad',
+        descripcion: 'Revisa las fechas de cierre en la sección de actividades.',
+      },
+      {
+        tipo: 'PDF',
+        titulo: 'Casos de estudio para el taller',
+        objetoKey: 'aulas/demo/guia-unidad.pdf',
+        mime: 'application/pdf',
+        descripcion: 'Casos que se trabajan en el taller de la unidad 2',
+      },
+    ],
+    3: [
+      {
+        tipo: 'PDF',
+        titulo: 'Lineamientos del proyecto final',
+        objetoKey: 'aulas/demo/guia-unidad.pdf',
+        mime: 'application/pdf',
+        descripcion: 'Estructura, entregables y rúbrica del proyecto',
+      },
+      {
+        tipo: 'ENLACE',
+        titulo: 'Plantilla para el proyecto',
+        url: 'https://developer.mozilla.org/es/docs/Learn',
+      },
+    ],
+  };
 
   for (const unidad of unidades) {
     const filaUnidad = await cliente.query<{ id: string }>(
@@ -364,57 +442,83 @@ async function sembrarAulaVirtual(
     );
     const unidadId = filaUnidad.rows[0]!.id;
 
-    const contenidos = unidad.numero === 1
-      ? [
-          { tipo: 'PDF', titulo: 'Guía de la unidad', objetoKey: 'aulas/demo/guia-unidad.pdf', mime: 'application/pdf' },
-          { tipo: 'ENLACE', titulo: 'Documentación recomendada', url: 'https://developer.mozilla.org/es/' },
-        ]
-      : [
-          {
-            tipo: 'VIDEO',
-            titulo: 'Video de la unidad',
-            url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-          },
-          { tipo: 'ANUNCIO', titulo: 'Recordatorio de entrega' },
-        ];
-
-    for (const contenido of contenidos) {
+    for (const contenido of contenidosPorUnidad[unidad.numero] ?? []) {
       const existe = await cliente.query(
         'SELECT 1 FROM contenido WHERE unidad_id = $1 AND titulo = $2',
         [unidadId, contenido.titulo],
       );
       if ((existe.rowCount ?? 0) > 0) continue;
       await cliente.query(
-        `INSERT INTO contenido (unidad_id, tipo, titulo, objeto_key, url_externa, mime)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [unidadId, contenido.tipo, contenido.titulo, contenido.objetoKey ?? null, contenido.url ?? null, contenido.mime ?? null],
+        `INSERT INTO contenido (unidad_id, tipo, titulo, descripcion, objeto_key, url_externa, mime)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          unidadId,
+          contenido.tipo,
+          contenido.titulo,
+          contenido.descripcion ?? null,
+          contenido.objetoKey ?? null,
+          contenido.url ?? null,
+          contenido.mime ?? null,
+        ],
       );
     }
 
-    const actividades = unidad.numero === 1
-      ? [
-          { tipo: 'TAREA', titulo: 'Taller de la unidad 1', peso: 50, corte: 1 },
-          { tipo: 'CUESTIONARIO', titulo: 'Cuestionario de la unidad 1', peso: 50, corte: 1 },
-        ]
-      : [
-          { tipo: 'FORO', titulo: 'Foro de discusión', peso: 40, corte: 2 },
-        ];
+    const actividades = (
+      unidad.numero === 1
+        ? [
+            { tipo: 'TAREA', titulo: 'Taller de la unidad 1', peso: 40, corte: 1, dias: -12 },
+            { tipo: 'CUESTIONARIO', titulo: 'Cuestionario de la unidad 1', peso: 30, corte: 1, dias: -9 },
+            { tipo: 'TAREA', titulo: 'Informe de laboratorio', peso: 30, corte: 1, dias: -5 },
+          ]
+        : unidad.numero === 2
+          ? [
+              { tipo: 'FORO', titulo: 'Foro de discusión: casos reales', peso: 40, corte: 2, dias: 7 },
+              { tipo: 'TAREA', titulo: 'Taller de la unidad 2', peso: 60, corte: 2, dias: 10 },
+            ]
+          : [
+              { tipo: 'TAREA', titulo: 'Proyecto final', peso: 60, corte: 3, dias: 25 },
+              { tipo: 'CUESTIONARIO', titulo: 'Evaluación final', peso: 40, corte: 3, dias: 28 },
+            ]
+    ) as ReadonlyArray<{ tipo: string; titulo: string; peso: number; corte: number; dias: number }>;
 
     for (const actividad of actividades) {
-      const existeActividad = await cliente.query(
-        'SELECT 1 FROM actividad WHERE unidad_id = $1 AND titulo = $2',
+      const existeActividad = await cliente.query<{ id: string }>(
+        'SELECT id FROM actividad WHERE unidad_id = $1 AND titulo = $2',
         [unidadId, actividad.titulo],
       );
-      if ((existeActividad.rowCount ?? 0) > 0) continue;
+      const instrucciones =
+        actividad.tipo === 'FORO'
+          ? 'Participa con al menos dos aportes y responde a un compañero.'
+          : 'Actividad de demostración con datos ficticios.';
+      const cierraEn = new Date(Date.now() + actividad.dias * 86_400_000).toISOString();
+      if ((existeActividad.rowCount ?? 0) > 0) {
+        // Semillas anteriores ya crearon la actividad: se normalizan pesos, corte y fecha.
+        await cliente.query(
+          `UPDATE actividad SET instrucciones = $2, cierra_en = $3::timestamptz,
+             corte_id = $4, peso_porcentual = $5, revision_permitida = $6
+           WHERE id = $1`,
+          [
+            existeActividad.rows[0]!.id,
+            instrucciones,
+            cierraEn,
+            cortes[actividad.corte],
+            actividad.peso,
+            actividad.tipo === 'CUESTIONARIO',
+          ],
+        );
+        continue;
+      }
 
       const filaActividad = await cliente.query<{ id: string }>(
         `INSERT INTO actividad (unidad_id, tipo, titulo, instrucciones, cierra_en, corte_id, peso_porcentual, revision_permitida)
-         VALUES ($1, $2, $3, 'Actividad de demostración con datos ficticios', now() + interval '14 days', $4, $5, $6)
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7, $8)
          RETURNING id`,
         [
           unidadId,
           actividad.tipo,
           actividad.titulo,
+          instrucciones,
+          cierraEn,
           cortes[actividad.corte],
           actividad.peso,
           actividad.tipo === 'CUESTIONARIO',
@@ -422,6 +526,21 @@ async function sembrarAulaVirtual(
       );
       const actividadId = filaActividad.rows[0]?.id;
       if (!actividadId) continue;
+
+      if (actividad.tipo === 'TAREA' || actividad.tipo === 'CUESTIONARIO') {
+        await cliente.query(
+          `INSERT INTO actividad_recurso (actividad_id, objeto_key, nombre, mime, tamano, subido_por)
+           SELECT $1, 'aulas/demo/guia-unidad.pdf', 'Guía de la actividad.pdf',
+                  'application/pdf', 860, g.docente_id
+           FROM aula au JOIN grupo g ON g.id = au.grupo_id
+           WHERE au.id = $2
+             AND NOT EXISTS (
+               SELECT 1 FROM actividad_recurso r
+               WHERE r.actividad_id = $1 AND r.objeto_key = 'aulas/demo/guia-unidad.pdf'
+             )`,
+          [actividadId, aulaId],
+        );
+      }
 
       if (actividad.tipo === 'CUESTIONARIO') {
         const preguntasCorrectas: Array<{ preguntaId: string; opcionCorrecta: string }> = [];
@@ -451,50 +570,73 @@ async function sembrarAulaVirtual(
           preguntasCorrectas.push({ preguntaId, opcionCorrecta: opciones[0]! });
         }
 
-        // Un intento de ejemplo: el docente puede ver qué opción eligió el estudiante.
-        const estudianteIntento = datos.estudiantes[1] ?? datos.estudiantes[0];
-        if (estudianteIntento) {
+        // Intentos de ejemplo: el docente ve respuestas correctas e incompletas.
+        const intentosDemo = [
+          { estudiante: datos.estudiantes[1] ?? datos.estudiantes[0], puntaje: 5.0, nota: 5.0, completa: true },
+          { estudiante: datos.estudiantes[3] ?? datos.estudiantes[0], puntaje: 3.5, nota: 3.5, completa: false },
+        ].filter((intento) => intento.estudiante);
+
+        for (const intento of intentosDemo) {
           const respuestas: Record<string, string[]> = {};
-          for (const pregunta of preguntasCorrectas) {
-            respuestas[pregunta.preguntaId] = [pregunta.opcionCorrecta];
+          for (const [indice, pregunta] of preguntasCorrectas.entries()) {
+            respuestas[pregunta.preguntaId] =
+              intento.completa || indice === 0 ? [pregunta.opcionCorrecta] : [];
           }
           await cliente.query(
             `INSERT INTO intento_cuestionario (actividad_id, estudiante_id, respuestas, puntaje)
-             VALUES ($1, $2, $3::jsonb, 5.0)
+             VALUES ($1, $2, $3::jsonb, $4)
              ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
-            [actividadId, estudianteIntento.id, JSON.stringify(respuestas)],
+            [actividadId, intento.estudiante!.id, JSON.stringify(respuestas), intento.puntaje],
           );
           const inscripcionIntento = await cliente.query<{ id: string }>(
             'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
-            [estudianteIntento.id, datos.grupoId],
+            [intento.estudiante!.id, datos.grupoId],
           );
           const inscripcionId = inscripcionIntento.rows[0]?.id;
           if (inscripcionId) {
             await cliente.query(
               `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
-               VALUES ($1, $2, 5.0, 'Autocalificado por el cuestionario')
+               VALUES ($1, $2, $3, $4)
                ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
-              [actividadId, inscripcionId],
+              [
+                actividadId,
+                inscripcionId,
+                intento.nota,
+                intento.completa
+                  ? 'Respuestas correctas en su mayoría.'
+                  : 'Revisa los conceptos de la unidad; faltan respuestas.',
+              ],
             );
           }
         }
       }
 
-      if (actividad.tipo === 'TAREA' && datos.estudiantes.length > 0) {
-        const inscripcion = await cliente.query<{ id: string }>(
-          'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
-          [datos.estudiantes[0]!.id, datos.grupoId],
-        );
-        const inscripcionId = inscripcion.rows[0]?.id;
-        if (inscripcionId) {
-          await cliente.query(
+      if (actividad.tipo === 'TAREA') {
+        const notas = [4.5, 3.8];
+        const comentarios = [
+          'Entrega completa y bien sustentada.',
+          'Cumple con lo solicitado; revisa la presentación.',
+        ];
+        const estudiantesEntrega = datos.estudiantes.slice(0, 3);
+        for (const [indice, estudiante] of estudiantesEntrega.entries()) {
+          const inscripcion = await cliente.query<{ id: string }>(
+            'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
+            [estudiante.id, datos.grupoId],
+          );
+          const inscripcionId = inscripcion.rows[0]?.id;
+          if (!inscripcionId) continue;
+          const entregada = await cliente.query(
             `INSERT INTO entrega (id, actividad_id, estudiante_id, texto, adjuntos, creada_en_cliente, estado)
-             SELECT gen_random_uuid(), $1, i.estudiante_id, $2, $3::jsonb, now() - interval '1 day', 'ENVIADA'
-             FROM inscripcion i WHERE i.id = $4
-             ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, 'ENVIADA')
+             ON CONFLICT (actividad_id, estudiante_id) DO NOTHING
+             RETURNING id`,
             [
+              randomUUID(),
               actividadId,
-              'Entrega de demostración: revisa el archivo adjunto.',
+              estudiante.id,
+              indice === 0
+                ? 'Entrega de demostración: revisa el archivo adjunto.'
+                : 'Trabajo desarrollado según la guía de la unidad.',
               JSON.stringify([
                 {
                   objetoKey: 'aulas/demo/guia-unidad.pdf',
@@ -503,15 +645,18 @@ async function sembrarAulaVirtual(
                   tamano: 860,
                 },
               ]),
-              inscripcionId,
+              new Date(Date.now() - (indice + 1) * 86_400_000).toISOString(),
             ],
           );
-          await cliente.query(
-            `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
-             VALUES ($1, $2, 4.2, 'Buen trabajo en la demostración')
-             ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
-            [actividadId, inscripcionId],
-          );
+          // Algunas entregas quedan sin calificar para mostrar el trabajo pendiente del docente.
+          if (entregada.rowCount && indice < notas.length) {
+            await cliente.query(
+              `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+              [actividadId, inscripcionId, notas[indice], comentarios[indice]],
+            );
+          }
         }
       }
     }
@@ -608,8 +753,8 @@ async function sembrarComunicacionDemo(): Promise<void> {
 }
 
 /** PDF mínimo válido para que el contenido «Guía de la unidad» se pueda descargar en la demo. */
-function pdfDemostracion(): Buffer {
-  const texto = 'Guia de demostracion - Uniminuto Campus App';
+function pdfDemostracion(titulo = 'Guia de demostracion - Uniminuto Campus App'): Buffer {
+  const texto = titulo;
   const objetos = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -648,30 +793,236 @@ async function subirArchivosDemo(): Promise<void> {
       forcePathStyle: true,
       credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
     });
-    await cliente.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: 'aulas/demo/guia-unidad.pdf',
-        ContentType: 'application/pdf',
-        Body: pdfDemostracion(),
-      }),
-    );
-    log('Archivo de demostración subido al datalake (aulas/demo/guia-unidad.pdf)');
+    const archivosDemo: Array<{ clave: string; titulo: string }> = [
+      { clave: 'aulas/demo/guia-unidad.pdf', titulo: 'Guia de estudio - Uniminuto Campus App' },
+      { clave: 'aulas/demo/reglamento.pdf', titulo: 'Reglamento del curso - Uniminuto Campus App' },
+    ];
+    for (const archivo of archivosDemo) {
+      await cliente.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: archivo.clave,
+          ContentType: 'application/pdf',
+          Body: pdfDemostracion(archivo.titulo),
+        }),
+      );
+    }
+    log('Archivos de demostración subidos al datalake (guía y reglamento)');
   } catch (error) {
     console.warn(
       '⚠ No se pudieron subir los archivos de demostración:',
-      error instanceof Error ? error.message : error,
+            error instanceof Error ? error.message : error,
     );
   }
 }
 
-async function principal(): Promise<void> {  log(`Sembrando datos contra ${new URL(env.DATABASE_URL).host}`);
+const aulasEliminadas: string[] = [];
+const forosEliminados: string[] = [];
+
+/** Elimina cursos y actividades con nombres de prueba creados desde la app en sesiones anteriores. */
+async function limpiarDatosDePrueba(
+  cliente: PoolClient,
+): Promise<{ aulas: string[]; foros: string[] }> {
+  const asignaturas = await cliente.query<{ id: string }>(
+    `SELECT id FROM asignatura
+     WHERE codigo IN ('1111111', '2221') OR lower(nombre) IN ('222211', 'lick')`,
+  );
+  const asignaturaIds = asignaturas.rows.map((fila) => fila.id);
+  const grupos = asignaturaIds.length
+    ? (
+        await cliente.query<{ id: string; aula_id: string | null }>(
+          `SELECT g.id, au.id AS aula_id FROM grupo g
+           LEFT JOIN aula au ON au.grupo_id = g.id
+           WHERE g.asignatura_id = ANY($1::uuid[])`,
+          [asignaturaIds],
+        )
+      ).rows
+    : [];
+  const grupoIds = grupos.map((fila) => fila.id);
+  const aulas = grupos.map((fila) => fila.aula_id).filter((id): id is string => Boolean(id));
+
+  const condiciones = [
+    `lower(act.titulo) IN ('sss', 'prueba', 'hfyjv', 'yjyyg', 'foro de discusión')`,
+  ];
+  const valores: unknown[] = [];
+  if (aulas.length > 0) {
+    valores.push(aulas);
+    condiciones.push(
+      `act.unidad_id IN (SELECT un.id FROM unidad un WHERE un.aula_id = ANY($1::uuid[]))`,
+    );
+  }
+  const actividades = await cliente.query<{ id: string; tipo: string }>(
+    `SELECT act.id, act.tipo FROM actividad act WHERE ${condiciones.join(' OR ')}`,
+    valores,
+  );
+  const actividadIds = actividades.rows.map((fila) => fila.id);
+  const foros = actividades.rows
+    .filter((fila) => fila.tipo === 'FORO')
+    .map((fila) => fila.id);
+
+  if (actividadIds.length > 0) {
+    await cliente.query('DELETE FROM calificacion WHERE actividad_id = ANY($1::uuid[])', [actividadIds]);
+    await cliente.query('DELETE FROM intento_cuestionario WHERE actividad_id = ANY($1::uuid[])', [
+      actividadIds,
+    ]);
+    await cliente.query('DELETE FROM entrega WHERE actividad_id = ANY($1::uuid[])', [actividadIds]);
+    await cliente.query('DELETE FROM actividad_recurso WHERE actividad_id = ANY($1::uuid[])', [
+      actividadIds,
+    ]);
+    await cliente.query('DELETE FROM actividad WHERE id = ANY($1::uuid[])', [actividadIds]);
+  }
+  if (aulas.length > 0) {
+    await cliente.query(
+      `DELETE FROM contenido WHERE unidad_id IN (SELECT id FROM unidad WHERE aula_id = ANY($1::uuid[]))`,
+      [aulas],
+    );
+    await cliente.query('DELETE FROM unidad WHERE aula_id = ANY($1::uuid[])', [aulas]);
+  }
+  if (grupoIds.length > 0) {
+    await cliente.query('DELETE FROM horario WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
+    await cliente.query('DELETE FROM inscripcion WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
+    await cliente.query('DELETE FROM aula WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
+    await cliente.query('DELETE FROM grupo WHERE id = ANY($1::uuid[])', [grupoIds]);
+  }
+  if (asignaturaIds.length > 0) {
+    await cliente.query('DELETE FROM asignatura WHERE id = ANY($1::uuid[])', [asignaturaIds]);
+  }
+
+  // El rol ADMIN_ESPACIOS se absorbió en ADMIN_ACADEMICO (D-85): limpia asignaciones viejas.
+  await cliente.query(
+    `DELETE FROM usuario_rol WHERE rol_id IN (SELECT id FROM rol WHERE nombre = 'ADMIN_ESPACIOS')`,
+  );
+
+  if (asignaturaIds.length > 0 || actividadIds.length > 0) {
+    log(
+      `Limpieza: ${asignaturaIds.length} asignatura(s) y ${actividadIds.length} actividad(es) de prueba eliminadas`,
+    );
+  }
+  return { aulas, foros };
+}
+
+/** Borra anuncios/hilos huérfanos de Firestore de los cursos que se eliminaron. */
+async function limpiarComunicacionDemo(aulas: string[], foros: string[]): Promise<void> {
+  if (getApps().length === 0 || (aulas.length === 0 && foros.length === 0)) return;
+  const db = getFirestore();
+  for (const aulaId of aulas) {
+    const items = await db.collection('anuncios').doc(aulaId).collection('items').listDocuments();
+    await Promise.all(items.map((item) => item.delete()));
+    await db.doc(`anuncios/${aulaId}`).delete();
+  }
+  for (const foroId of foros) {
+    await db.doc(`foros_index/${foroId}`).delete();
+    const hilos = await db.collection('foros').doc(foroId).collection('hilos').listDocuments();
+    for (const hilo of hilos) {
+      const mensajes = await hilo.collection('mensajes').listDocuments();
+      await Promise.all(mensajes.map((mensaje) => mensaje.delete()));
+      await hilo.delete();
+    }
+    await db.doc(`foros/${foroId}`).delete();
+  }
+}
+
+/** Hilos y mensajes ficticios en los foros para que la demostración no esté vacía. */
+async function sembrarHilosForoDemo(): Promise<void> {
+  if (getApps().length === 0) return;
+  const db = getFirestore();
+  const foros = await pool.query<{
+    foro_id: string;
+    aula_id: string;
+    docente_uid: string | null;
+    docente_nombre: string | null;
+  }>(
+    `SELECT act.id AS foro_id, au.id AS aula_id,
+            d.uid_firebase AS docente_uid,
+            d.nombres || ' ' || d.apellidos AS docente_nombre
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     LEFT JOIN usuario d ON d.id = g.docente_id
+     WHERE act.tipo = 'FORO'`,
+  );
+
+  for (const foro of foros.rows) {
+    const hilosExistentes = await db
+      .collection('foros')
+      .doc(foro.foro_id)
+      .collection('hilos')
+      .listDocuments();
+    if (hilosExistentes.length > 0) continue;
+
+    const estudiantes = await pool.query<{ uid: string; nombre: string }>(
+      `SELECT u.uid_firebase AS uid, u.nombres || ' ' || u.apellidos AS nombre
+       FROM inscripcion i
+       JOIN usuario u ON u.id = i.estudiante_id
+       JOIN aula au ON au.grupo_id = i.grupo_id
+       WHERE au.id = $1 AND i.estado = 'ACTIVA'
+       ORDER BY u.apellidos, u.nombres
+       LIMIT 2`,
+      [foro.aula_id],
+    );
+    const docente = {
+      uid: foro.docente_uid ?? '',
+      nombre: foro.docente_nombre ?? 'Docente',
+    };
+    const autores = [...estudiantes.rows, docente];
+    const hilos = [
+      {
+        titulo: '¿Cómo aplicar lo visto en un caso real?',
+        mensajes: [
+          'Comparto un ejemplo de mi entorno para discutirlo en clase.',
+          'Buen aporte; complementa la respuesta con la guía de la unidad.',
+        ],
+      },
+      {
+        titulo: 'Dudas sobre la entrega de la unidad',
+        mensajes: [
+          '¿La entrega debe incluir bibliografía y conclusiones?',
+          'Sí: revisa la rúbrica del curso y el archivo de la actividad.',
+        ],
+      },
+    ];
+
+    for (const [indice, hilo] of hilos.entries()) {
+      const autor = autores[indice % autores.length] ?? docente;
+      const referencia = db
+        .collection('foros')
+        .doc(foro.foro_id)
+        .collection('hilos')
+        .doc(`hilo-demo-${indice + 1}`);
+      await referencia.set({
+        titulo: hilo.titulo,
+        autor_uid: autor.uid,
+        autor_nombre: autor.nombre,
+        aula_id: foro.aula_id,
+        foro_id: foro.foro_id,
+        creado_en: new Date(Date.now() - (indice + 2) * 86_400_000).toISOString(),
+      });
+      for (const [orden, texto] of hilo.mensajes.entries()) {
+        const autorMensaje = autores[(indice + orden + 1) % autores.length] ?? docente;
+        await referencia.collection('mensajes').doc(`mensaje-demo-${orden + 1}`).set({
+          texto,
+          autor_uid: autorMensaje.uid,
+          autor_nombre: autorMensaje.nombre,
+          creado_en: new Date(Date.now() - (indice + 2) * 86_400_000 + orden * 3_600_000).toISOString(),
+        });
+      }
+    }
+  }
+  log(`Hilos de foro de demostración preparados (${foros.rows.length} foros)`);
+}
+
+async function principal(): Promise<void> {
+  log(`Sembrando datos contra ${new URL(env.DATABASE_URL).host}`);
 
   const usuariosSembrados: UsuarioSembrado[] = [];
 
   await enTransaccion(pool, async (cliente) => {
-    log('Programa y periodo');
-    const programaId = await upsertPrograma(cliente, 'Ingeniería de Sistemas');
+    log('Programas académicos, campus y periodo');
+    const programaPorNombre = new Map<string, string>();
+    for (const programa of PROGRAMAS) {
+      programaPorNombre.set(programa.nombre, await upsertPrograma(cliente, programa.nombre));
+    }
     const periodoId = await upsertPeriodo(cliente, '2026-2');
 
     log('Campus Calle 80 (edificios, pisos y salones)');
@@ -680,11 +1031,17 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
     log('Espacios de autorecreación (cabinas y salas)');
     await sembrarEspaciosReservables(cliente);
 
+    log('Limpieza de datos de prueba de sesiones anteriores');
+    const restos = await limpiarDatosDePrueba(cliente);
+    aulasEliminadas.push(...restos.aulas);
+    forosEliminados.push(...restos.foros);
+
     log('Usuarios, roles y claims');
     for (const usuario of USUARIOS) {
       const uid = cuenta
         ? await asegurarUsuarioFirebase(usuario.correo, usuario.nombres, usuario.apellidos, [usuario.rol])
         : uidLocal(usuario.codigo);
+      const programaId = usuario.programa ? programaPorNombre.get(usuario.programa) ?? null : null;
       const id = await upsertUsuario(cliente, usuario, uid, programaId);
       usuariosSembrados.push({
         id,
@@ -696,103 +1053,94 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
     }
 
     const idPorCorreo = new Map(usuariosSembrados.map((usuario) => [usuario.correo, usuario.id]));
+    const uidPorCorreo = new Map(usuariosSembrados.map((usuario) => [usuario.correo, usuario.uid]));
 
-    log('Asignaturas, grupos, inscripciones y horarios');
-    for (const asignatura of ASIGNATURAS) {
+    log('Cursos, inscripciones, horarios y aulas virtuales');
+    const asignaturasProcesadas = new Set<string>();
+    for (const curso of CURSOS) {
+      if (!asignaturasProcesadas.has(curso.asignatura)) {
+        await cliente.query(
+          `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos,
+             requiere_laboratorio = EXCLUDED.requiere_laboratorio`,
+          [curso.asignatura, curso.nombre, curso.creditos, curso.requiereLaboratorio],
+        );
+        asignaturasProcesadas.add(curso.asignatura);
+      }
       const filaAsignatura = await cliente.query<{ id: string }>(
-        `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos,
-           requiere_laboratorio = EXCLUDED.requiere_laboratorio
-         RETURNING id`,
-        [asignatura.codigo, asignatura.nombre, asignatura.creditos, asignatura.requiereLaboratorio],
+        'SELECT id FROM asignatura WHERE codigo = $1',
+        [curso.asignatura],
       );
       const asignaturaId = filaAsignatura.rows[0]!.id;
 
-      const filaGrupo = await cliente.query<{ id: string }>(
-        `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
-         VALUES ($1, $2, $3, '01', $4)
-         ON CONFLICT (asignatura_id, periodo_id, numero_grupo)
-         DO UPDATE SET docente_id = EXCLUDED.docente_id, codigo_curso = EXCLUDED.codigo_curso
-         RETURNING id`,
-        [asignaturaId, periodoId, idPorCorreo.get(asignatura.docente) ?? null, asignatura.codigoCurso],
-      );
-      const grupoId = filaGrupo.rows[0]!.id;
-
-      await sembrarAulaVirtual(cliente, {
-        grupoId,
-        nombre: `${asignatura.nombre} · Curso ${asignatura.codigoCurso}`,
-        docenteUid: usuariosSembrados.find((usuario) => usuario.correo === asignatura.docente)?.uid,
-        estudiantes: usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE'),
-      });
-
-      for (const estudiante of usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE')) {
-        await cliente.query(
-          `INSERT INTO inscripcion (estudiante_id, grupo_id, estado) VALUES ($1, $2, 'ACTIVA')
-           ON CONFLICT (estudiante_id, grupo_id) DO UPDATE SET estado = 'ACTIVA'`,
-          [estudiante.id, grupoId],
-        );
-      }
-
-      for (const [dia, inicio, fin, salonCodigo] of HORARIOS[asignatura.codigo] ?? []) {
-        const salon = await cliente.query<{ id: string }>('SELECT id FROM salon WHERE codigo = $1', [salonCodigo]);
-        if (!salon.rows[0]) {
-          throw new Error(`El salón ${salonCodigo} no existe; revisa la semilla del campus`);
-        }
-        await cliente.query(
-          `INSERT INTO horario (grupo_id, salon_id, dia_semana, hora_inicio, hora_fin)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (grupo_id, dia_semana, hora_inicio) DO UPDATE SET salon_id = EXCLUDED.salon_id, hora_fin = EXCLUDED.hora_fin`,
-          [grupoId, salon.rows[0].id, dia, inicio, fin],
-        );
-      }
-    }
-
-    log('Grupos adicionales para el planificador de salones');
-    for (const extra of GRUPOS_EXTRA) {
-      const asignatura = await cliente.query<{ id: string }>(
-        'SELECT id FROM asignatura WHERE codigo = $1',
-        [extra.asignatura],
-      );
-      const asignaturaId = asignatura.rows[0]?.id;
-      if (!asignaturaId) continue;
       const filaGrupo = await cliente.query<{ id: string }>(
         `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (asignatura_id, periodo_id, numero_grupo)
          DO UPDATE SET docente_id = EXCLUDED.docente_id, codigo_curso = EXCLUDED.codigo_curso
          RETURNING id`,
-        [asignaturaId, periodoId, idPorCorreo.get(extra.docente) ?? null, extra.numero, extra.codigoCurso],
+        [
+          asignaturaId,
+          periodoId,
+          idPorCorreo.get(curso.docente) ?? null,
+          curso.numero,
+          curso.codigoCurso,
+        ],
       );
       const grupoId = filaGrupo.rows[0]!.id;
-      const estudiantesExtra = usuariosSembrados.filter((usuario) =>
-        extra.estudiantes.includes(usuario.correo),
+      const estudiantes = usuariosSembrados.filter((usuario) =>
+        curso.estudiantes.includes(usuario.correo),
       );
-      for (const estudiante of estudiantesExtra) {
+
+      for (const estudiante of estudiantes) {
         await cliente.query(
           `INSERT INTO inscripcion (estudiante_id, grupo_id, estado) VALUES ($1, $2, 'ACTIVA')
            ON CONFLICT (estudiante_id, grupo_id) DO UPDATE SET estado = 'ACTIVA'`,
           [estudiante.id, grupoId],
         );
       }
-      await sembrarAulaVirtual(cliente, {
+
+      await sembrarAulaVirtualDemo(cliente, {
         grupoId,
-        nombre: `${extra.asignatura} · Curso ${extra.codigoCurso}`,
-        docenteUid: usuariosSembrados.find((usuario) => usuario.correo === extra.docente)?.uid,
-        estudiantes: estudiantesExtra,
+        nombre: `${curso.nombre} · Curso ${curso.codigoCurso}`,
+        docenteUid: uidPorCorreo.get(curso.docente),
+        estudiantes,
+        curso,
       });
-      for (const [dia, inicio, fin, salonCodigo] of extra.horarios) {
-        const salon = await cliente.query<{ id: string }>('SELECT id FROM salon WHERE codigo = $1', [
-          salonCodigo,
-        ]);
-        if (!salon.rows[0]) continue;
+
+      for (const [dia, inicio, fin, salonCodigo] of curso.horarios) {
+        const salon = await cliente.query<{ id: string }>(
+          'SELECT id FROM salon WHERE codigo = $1',
+          [salonCodigo],
+        );
+        if (!salon.rows[0]) throw new Error(`El salón ${salonCodigo} no existe en la semilla`);
         await cliente.query(
           `INSERT INTO horario (grupo_id, salon_id, dia_semana, hora_inicio, hora_fin)
            VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (grupo_id, dia_semana, hora_inicio) DO UPDATE SET salon_id = EXCLUDED.salon_id, hora_fin = EXCLUDED.hora_fin`,
+           ON CONFLICT (grupo_id, dia_semana, hora_inicio)
+           DO UPDATE SET salon_id = EXCLUDED.salon_id, hora_fin = EXCLUDED.hora_fin`,
           [grupoId, salon.rows[0].id, dia, inicio, fin],
         );
       }
     }
+
+    log('Limpieza de horarios/inscripciones de cursos que ya no están en la semilla');
+    await cliente.query(
+      `DELETE FROM horario WHERE grupo_id IN (
+         SELECT g.id FROM grupo g JOIN periodo p ON p.id = g.periodo_id
+         WHERE p.codigo = '2026-2'
+           AND g.codigo_curso NOT IN (SELECT unnest($1::text[]))
+       )`,
+      [CURSOS.map((curso) => curso.codigoCurso)],
+    );
+    await cliente.query(
+      `DELETE FROM inscripcion WHERE grupo_id IN (
+         SELECT g.id FROM grupo g JOIN periodo p ON p.id = g.periodo_id
+         WHERE p.codigo = '2026-2'
+           AND g.codigo_curso NOT IN (SELECT unnest($1::text[]))
+       )`,
+      [CURSOS.map((curso) => curso.codigoCurso)],
+    );
 
     log('Entregas e intentos de ejemplo (actividades ya realizadas)');
     await sembrarActividadesRealizadasDemo(cliente);
@@ -804,28 +1152,36 @@ async function principal(): Promise<void> {  log(`Sembrando datos contra ${new U
     );
 
     log('Incidencias de demostración');
-    const estudianteDemo = usuariosSembrados.find((usuario) => usuario.rol === 'ESTUDIANTE');
-    if (estudianteDemo) {
-      const incidenciasDemo = [
-        'El lector de la entrada del Edificio B no reconoce el QR del carnet',
-        'La sala de autorecreación B-301 aparece ocupada sin reserva',
-      ];
-      for (const descripcion of incidenciasDemo) {
-        const existe = await cliente.query('SELECT 1 FROM incidencia WHERE descripcion = $1', [
-          descripcion,
-        ]);
-        if ((existe.rowCount ?? 0) === 0) {
-          await cliente.query('INSERT INTO incidencia (usuario_id, descripcion) VALUES ($1, $2)', [
-            estudianteDemo.id,
-            descripcion,
-          ]);
-        }
+    const estudiantesDemo = usuariosSembrados.filter((usuario) => usuario.rol === 'ESTUDIANTE');
+    const incidenciasDemo = [
+      { descripcion: 'El lector de la entrada del Edificio B no reconoce el QR del carnet', estado: 'ABIERTA', resolucion: null },
+      { descripcion: 'La sala de autorecreación B-301 aparece ocupada sin reserva', estado: 'EN_PROCESO', resolucion: null },
+      { descripcion: 'No puedo abrir el PDF de la guía de la unidad 1', estado: 'RESUELTA', resolucion: 'Se volvió a publicar el material en el aula virtual.' },
+      { descripcion: 'El aula virtual muestra una entrega marcada como no entregada', estado: 'ABIERTA', resolucion: null },
+      { descripcion: 'El horario del curso 2235 choca con una clase de otro programa', estado: 'EN_PROCESO', resolucion: null },
+      { descripcion: 'La aplicación se cerró al descargar un archivo de una actividad', estado: 'RESUELTA', resolucion: 'Se corrigió la descarga de archivos adjuntos.' },
+      { descripcion: 'Solicito actualizar mi correo institucional en el perfil', estado: 'ABIERTA', resolucion: null },
+    ];
+    for (const [indice, incidencia] of incidenciasDemo.entries()) {
+      const existe = await cliente.query('SELECT 1 FROM incidencia WHERE descripcion = $1', [
+        incidencia.descripcion,
+      ]);
+      if ((existe.rowCount ?? 0) === 0) {
+        const estudiante = estudiantesDemo[indice % Math.max(estudiantesDemo.length, 1)];
+        if (!estudiante) continue;
+        await cliente.query(
+          `INSERT INTO incidencia (usuario_id, descripcion, estado, resolucion)
+           VALUES ($1, $2, $3, $4)`,
+          [estudiante.id, incidencia.descripcion, incidencia.estado, incidencia.resolucion],
+        );
       }
     }
   });
 
   log('Espejo de foros y anuncios de Firestore');
+  await limpiarComunicacionDemo(aulasEliminadas, forosEliminados);
   await sembrarComunicacionDemo();
+  await sembrarHilosForoDemo();
 
   log('Archivos de contenido de demostración');
   await subirArchivosDemo();

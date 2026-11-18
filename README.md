@@ -85,18 +85,19 @@ curl -H "Authorization: Bearer <token>" http://localhost:3000/api/v1/sesion
 
 ```bash
 npm run db:migrate   # aplica las migraciones SQL numeradas (idempotente)
-npm run db:seed      # usuarios + claims, programa, periodo 2026-2, asignaturas, grupos,
-                     # inscripciones, campus Calle 80 y horarios (idempotente)
+npm run db:seed      # 3 programas, 15 cursos, 26 usuarios, campus Calle 80, horarios,
+                     # aulas virtuales, entregas, notas y foros de demostración (idempotente)
 ```
 
 Credenciales de demostración (todas con contraseña `Demo1234*`):
 
 | Rol | Correo |
 |---|---|
-| Estudiante | `juan.rojas@demo.uniminuto.test` (también `maria.cardenas@`, `andres.molina@`) |
-| Docente | `carolina.pena@demo.uniminuto.test` (también `diego.suarez@`) |
-| Admin académico | `luisa.castro@demo.uniminuto.test` |
-| Admin espacios | `camilo.vega@demo.uniminuto.test` |
+| Estudiante (Ing. Sistemas) | `juan.rojas@demo.uniminuto.test` (también `maria.cardenas@`, `andres.molina@`, `camila.ortiz@`, `santiago.moreno@`, `valentina.ramirez@`, `felipe.castillo@`, `laura.jimenez@`) |
+| Estudiante (Administración) | `paula.mendoza@demo.uniminuto.test` (también `mateo.herrera@`, `daniela.suarez@`, `sebastian.pardo@`) |
+| Estudiante (Psicología) | `isabella.gomez@demo.uniminuto.test` (también `sara.navarro@`, `tomas.quintero@`) |
+| Docente | `carolina.pena@demo.uniminuto.test` (también `diego.suarez@`, `andrea.rincon@`, `julian.pardo@`, `paula.restrepo@`, `sofia.herrera@`) |
+| Admin académico | `luisa.castro@demo.uniminuto.test` (también `camilo.vega@`) |
 | Seguridad | `jorge.salazar@demo.uniminuto.test` |
 | Soporte | `natalia.gomez@demo.uniminuto.test` |
 | Auditor | `oscar.rincon@demo.uniminuto.test` |

@@ -44,10 +44,12 @@ Contraseña única para todas las cuentas: **`Demo1234*`** (dominio ficticio `@d
 
 | Rol | Correo | Para mostrar |
 |---|---|---|
-| Estudiante | `juan.rojas@demo.uniminuto.test` | Carnet, aulas, entregas, notas, horario, reservas, incidencias |
-| Docente | `carolina.pena@demo.uniminuto.test` | Calificar entregas, revisar intentos, publicar anuncios |
-| Admin académico | `luisa.castro@demo.uniminuto.test` | Periodos, asignaturas, grupos, inscripciones, resumen de evaluación docente |
-| Admin de espacios | `camilo.vega@demo.uniminuto.test` | Edificios, pisos, salones y horarios |
+| Estudiante (Ing. Sistemas) | `juan.rojas@demo.uniminuto.test` | Carnet, aulas, entregas, notas, horario, reservas, incidencias |
+| Estudiante (Administración) | `paula.mendoza@demo.uniminuto.test` | Cursos de su programa y sus notas |
+| Estudiante (Psicología) | `isabella.gomez@demo.uniminuto.test` | Cursos de su programa y sus notas |
+| Docente | `carolina.pena@demo.uniminuto.test` | Dos cursos de Bases de Datos con códigos distintos (1235 y 2235), calificar entregas, intentos, anuncios |
+| Docente | `andrea.rincon@demo.uniminuto.test` | Curso de Inteligencia Artificial con material y entregas |
+| Admin académico | `luisa.castro@demo.uniminuto.test` | Periodos, asignaturas, cursos, inscripciones, planificador y evaluación docente |
 | Seguridad | `jorge.salazar@demo.uniminuto.test` | Modo validador del QR offline |
 | Soporte | `natalia.gomez@demo.uniminuto.test` | Gestión de incidencias |
 | Auditor | `oscar.rincon@demo.uniminuto.test` | Visor de auditoría (solo lectura) |
