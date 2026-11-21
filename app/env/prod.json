@@ -1,4 +1,4 @@
 {
-  "API_BASE_URL": "https://api.campus-demo.example/api/v1",
+  "API_BASE_URL": "https://campus-api-2o1l.onrender.com/api/v1",
   "ENTORNO": "prod"
 }
