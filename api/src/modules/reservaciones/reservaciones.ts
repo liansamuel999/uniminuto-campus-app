@@ -124,6 +124,7 @@ export function crearRepositorioReservaciones(pool: Pool): RepositorioReservacio
       const resultado = await pool.query<FilaReservacion>(
         `${CONSULTA}
          WHERE r.estado = 'CONFIRMADA'
+           AND r.fin >= now()
            AND r.inicio >= $1::date AND r.inicio < ($1::date + interval '1 day')
          ORDER BY r.inicio`,
         [fecha],
@@ -135,6 +136,7 @@ export function crearRepositorioReservaciones(pool: Pool): RepositorioReservacio
       const resultado = await pool.query<FilaReservacion>(
         `${CONSULTA}
          WHERE r.estado = 'CONFIRMADA'
+           AND r.fin >= now()
            AND r.inicio >= $1::date AND r.inicio < ($1::date + interval '7 days')
          ORDER BY r.inicio`,
         [desde],
@@ -197,7 +199,7 @@ export function crearRepositorioReservaciones(pool: Pool): RepositorioReservacio
     async mias(uidFirebase) {
       const resultado = await pool.query<FilaReservacion>(
         `${CONSULTA}
-         WHERE u.uid_firebase = $1 AND r.estado = 'CONFIRMADA'
+         WHERE u.uid_firebase = $1 AND r.estado = 'CONFIRMADA' AND r.fin >= now()
          ORDER BY r.inicio DESC LIMIT 100`,
         [uidFirebase],
       );
@@ -206,7 +208,9 @@ export function crearRepositorioReservaciones(pool: Pool): RepositorioReservacio
 
     async todas() {
       const resultado = await pool.query<FilaReservacion>(
-        `${CONSULTA} WHERE r.estado = 'CONFIRMADA' ORDER BY r.inicio DESC LIMIT 200`,
+        `${CONSULTA}
+         WHERE r.estado = 'CONFIRMADA' AND r.fin >= now()
+         ORDER BY r.inicio DESC LIMIT 200`,
       );
       return resultado.rows.map(aReservacion);
     },

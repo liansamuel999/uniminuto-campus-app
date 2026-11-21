@@ -184,12 +184,10 @@ class _NotasPageState extends ConsumerState<NotasPage> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Row(
                   children: [
-                    Text('Corte ${corte['numero']} (${corte['peso']}%)'),
-                    if (corte['cerrado'] != true)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Text('· en curso', style: TextStyle(fontSize: 11, color: colores.primary)),
-                      ),
+                    Text(
+                      'Corte ${corte['numero']} (${corte['peso']}%) · cierra ${_fechaCorte(corte['cierraEn'])}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     const Spacer(),
                     Text(
                       corte['nota'] == null ? 'Sin nota' : (corte['nota'] as num).toStringAsFixed(2),
@@ -226,4 +224,10 @@ class _NotasPageState extends ConsumerState<NotasPage> {
       ),
     );
   }
+}
+
+String _fechaCorte(dynamic valor) {
+  final fecha = DateTime.tryParse('$valor')?.toLocal();
+  if (fecha == null) return 'sin fecha';
+  return '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
 }

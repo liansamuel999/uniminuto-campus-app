@@ -19,6 +19,8 @@ export interface Asignatura {
   codigo: string;
   nombre: string;
   creditos: number;
+  programaId: string | null;
+  programa: string | null;
 }
 
 export interface Grupo {
@@ -26,6 +28,8 @@ export interface Grupo {
   asignaturaId: string;
   asignatura: string;
   codigoAsignatura: string;
+  programaId: string | null;
+  programa: string | null;
   /** Código único del curso (NRC o equivalente): es lo que se muestra. */
   codigoCurso: string;
   periodoId: string;
@@ -57,16 +61,27 @@ export interface UsuarioAdmin {
   codigoInstitucional: string | null;
   roles: string[];
   programa: string | null;
+  programaId: string | null;
+  turnos: string[];
 }
 
 export interface RepositorioAdminAcademico {
   listarPeriodos(): Promise<Periodo[]>;
+  listarProgramas(): Promise<Array<{ id: string; nombre: string }>>;
   crearPeriodo(datos: Omit<Periodo, 'id'>): Promise<Periodo>;
   actualizarPeriodo(id: string, datos: Partial<Omit<Periodo, 'id'>>): Promise<Periodo | null>;
   eliminarPeriodo(id: string): Promise<boolean>;
   listarAsignaturas(): Promise<Asignatura[]>;
-  crearAsignatura(datos: Omit<Asignatura, 'id'>): Promise<Asignatura>;
-  actualizarAsignatura(id: string, datos: Partial<Omit<Asignatura, 'id'>>): Promise<Asignatura | null>;
+  crearAsignatura(datos: {
+    codigo: string;
+    nombre: string;
+    creditos: number;
+    programaId?: string | null;
+  }): Promise<Asignatura>;
+  actualizarAsignatura(
+    id: string,
+    datos: Partial<{ codigo: string; nombre: string; creditos: number; programaId: string | null }>,
+  ): Promise<Asignatura | null>;
   eliminarAsignatura(id: string): Promise<boolean>;
   listarGrupos(
     uidFirebase: string,
@@ -90,6 +105,7 @@ export interface RepositorioAdminAcademico {
   actualizarInscripcion(id: string, estado: string): Promise<Inscripcion | null>;
   eliminarInscripcion(id: string): Promise<boolean>;
   listarUsuarios(filtros: { rol?: string }): Promise<UsuarioAdmin[]>;
+  actualizarTurnos(usuarioId: string, turnos: string[]): Promise<UsuarioAdmin | null>;
 }
 
 const isoFecha = (valor: string | Date) =>
@@ -122,12 +138,14 @@ async function registrarAuditoria(
 
 const CONSULTA_GRUPO = `
   SELECT g.id, g.asignatura_id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
+         asg.programa_id, pr.nombre AS programa,
          g.codigo_curso, g.periodo_id, p.codigo AS periodo, g.docente_id,
          d.nombres || ' ' || d.apellidos AS docente, g.numero_grupo,
          (SELECT COUNT(*)::int FROM inscripcion i
           WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes
   FROM grupo g
   JOIN asignatura asg ON asg.id = g.asignatura_id
+  LEFT JOIN programa pr ON pr.id = asg.programa_id
   JOIN periodo p ON p.id = g.periodo_id
   LEFT JOIN usuario d ON d.id = g.docente_id
 `;
@@ -166,6 +184,8 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignatura_id: string;
     asignatura: string;
     codigo_asignatura: string;
+    programa_id: string | null;
+    programa: string | null;
     codigo_curso: string;
     periodo_id: string;
     periodo: string;
@@ -178,6 +198,8 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignaturaId: fila.asignatura_id,
     asignatura: fila.asignatura,
     codigoAsignatura: fila.codigo_asignatura,
+    programaId: fila.programa_id,
+    programa: fila.programa,
     codigoCurso: fila.codigo_curso,
     periodoId: fila.periodo_id,
     periodo: fila.periodo,
@@ -214,6 +236,13 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
          FROM periodo ORDER BY fecha_inicio DESC`,
       );
       return resultado.rows.map(filaPeriodo);
+    },
+
+    async listarProgramas() {
+      const resultado = await pool.query<{ id: string; nombre: string }>(
+        'SELECT id, nombre FROM programa ORDER BY nombre',
+      );
+      return resultado.rows;
     },
 
     async crearPeriodo(datos) {
@@ -282,27 +311,42 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
 
     async listarAsignaturas() {
       const resultado = await pool.query(
-        'SELECT id, codigo, nombre, creditos FROM asignatura ORDER BY nombre',
+        `SELECT a.id, a.codigo, a.nombre, a.creditos, a.programa_id, p.nombre AS programa
+         FROM asignatura a LEFT JOIN programa p ON p.id = a.programa_id
+         ORDER BY a.nombre`,
       );
       return resultado.rows.map((fila) => ({
         id: fila.id,
         codigo: fila.codigo,
         nombre: fila.nombre,
         creditos: Number(fila.creditos),
+        programaId: fila.programa_id,
+        programa: fila.programa,
       }));
     },
 
     async crearAsignatura(datos) {
       try {
         const resultado = await pool.query(
-          `INSERT INTO asignatura (codigo, nombre, creditos) VALUES ($1, $2, $3)
-           RETURNING id, codigo, nombre, creditos`,
-          [datos.codigo, datos.nombre, datos.creditos],
+          `INSERT INTO asignatura (codigo, nombre, creditos, programa_id) VALUES ($1, $2, $3, $4)
+           RETURNING id, codigo, nombre, creditos, programa_id`,
+          [datos.codigo, datos.nombre, datos.creditos, datos.programaId ?? null],
         );
         const fila = resultado.rows[0]!;
-        return { id: fila.id, codigo: fila.codigo, nombre: fila.nombre, creditos: Number(fila.creditos) };
+        const programa = fila.programa_id
+          ? await pool.query<{ nombre: string }>('SELECT nombre FROM programa WHERE id = $1', [fila.programa_id])
+          : null;
+        return {
+          id: fila.id,
+          codigo: fila.codigo,
+          nombre: fila.nombre,
+          creditos: Number(fila.creditos),
+          programaId: fila.programa_id,
+          programa: programa?.rows[0]?.nombre ?? null,
+        };
       } catch (error) {
         if (esDuplicado(error)) throw errores.conflicto('Ya existe una asignatura con ese código');
+        if (esConflictoDeIntegridad(error)) throw errores.datosInvalidos('El programa indicado no existe');
         throw error;
       }
     },
@@ -313,15 +357,35 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
           `UPDATE asignatura SET
              codigo = COALESCE($2, codigo),
              nombre = COALESCE($3, nombre),
-             creditos = COALESCE($4, creditos)
+             creditos = COALESCE($4, creditos),
+             programa_id = CASE WHEN $5::boolean THEN $6::uuid ELSE programa_id END
            WHERE id = $1
-           RETURNING id, codigo, nombre, creditos`,
-          [id, datos.codigo ?? null, datos.nombre ?? null, datos.creditos ?? null],
+           RETURNING id, codigo, nombre, creditos, programa_id`,
+          [
+            id,
+            datos.codigo ?? null,
+            datos.nombre ?? null,
+            datos.creditos ?? null,
+            datos.programaId !== undefined,
+            datos.programaId ?? null,
+          ],
         );
         const fila = resultado.rows[0];
-        return fila ? { id: fila.id, codigo: fila.codigo, nombre: fila.nombre, creditos: Number(fila.creditos) } : null;
+        if (!fila) return null;
+        const programa = fila.programa_id
+          ? await pool.query<{ nombre: string }>('SELECT nombre FROM programa WHERE id = $1', [fila.programa_id])
+          : null;
+        return {
+          id: fila.id,
+          codigo: fila.codigo,
+          nombre: fila.nombre,
+          creditos: Number(fila.creditos),
+          programaId: fila.programa_id,
+          programa: programa?.rows[0]?.nombre ?? null,
+        };
       } catch (error) {
         if (esDuplicado(error)) throw errores.conflicto('Ya existe una asignatura con ese código');
+        if (esConflictoDeIntegridad(error)) throw errores.datosInvalidos('El programa indicado no existe');
         throw error;
       }
     },
@@ -364,15 +428,57 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
 
     async crearGrupo(datos) {
       try {
-        const resultado = await pool.query(
-          `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
-           VALUES ($1, $2, $3, $4, $4) RETURNING id`,
-          [datos.asignaturaId, datos.periodoId, datos.docenteId ?? null, datos.codigoCurso],
-        );
-        const id = resultado.rows[0]?.id;
-        if (!id) return null;
-        const grupo = await pool.query(`${CONSULTA_GRUPO} WHERE g.id = $1`, [id]);
-        return grupo.rows[0] ? filaGrupo(grupo.rows[0]) : null;
+        return await withTx(pool, async (cliente) => {
+          const resultado = await cliente.query<{ id: string }>(
+            `INSERT INTO grupo (asignatura_id, periodo_id, docente_id, numero_grupo, codigo_curso)
+             VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+            [datos.asignaturaId, datos.periodoId, datos.docenteId ?? null, datos.codigoCurso],
+          );
+          const id = resultado.rows[0]?.id;
+          if (!id) return null;
+
+          // Un curso nuevo debe tener aula virtual y estructura mínima desde el primer momento;
+          // de lo contrario aparece en horarios pero no en «Aulas» para el docente/estudiantes.
+          const asignatura = await cliente.query<{ nombre: string; codigo: string }>(
+            'SELECT nombre, codigo FROM asignatura WHERE id = $1',
+            [datos.asignaturaId],
+          );
+          const nombreAsignatura = asignatura.rows[0]?.nombre ?? 'Curso';
+          await cliente.query(
+            `INSERT INTO aula (grupo_id, nombre, descripcion)
+             VALUES ($1, $2, 'Aula virtual del curso')
+             ON CONFLICT (grupo_id) DO NOTHING`,
+            [id, `${nombreAsignatura} · Curso ${datos.codigoCurso}`],
+          );
+          const cortes = [
+            [1, 30],
+            [2, 30],
+            [3, 40],
+          ] as const;
+          for (const [numero, peso] of cortes) {
+            await cliente.query(
+              `INSERT INTO corte (grupo_id, numero, peso_porcentual) VALUES ($1, $2, $3)
+               ON CONFLICT (grupo_id, numero) DO UPDATE SET peso_porcentual = EXCLUDED.peso_porcentual`,
+              [id, numero, peso],
+            );
+          }
+          const unidades = [
+            [1, 'Unidad 1: fundamentos'],
+            [2, 'Unidad 2: aplicación práctica'],
+            [3, 'Unidad 3: proyecto integrador'],
+          ] as const;
+          for (const [numero, titulo] of unidades) {
+            await cliente.query(
+              `INSERT INTO unidad (aula_id, numero, titulo)
+               SELECT au.id, $2, $3 FROM aula au WHERE au.grupo_id = $1
+               ON CONFLICT (aula_id, numero) DO UPDATE SET titulo = EXCLUDED.titulo`,
+              [id, numero, titulo],
+            );
+          }
+
+          const grupo = await cliente.query(`${CONSULTA_GRUPO} WHERE g.id = $1`, [id]);
+          return grupo.rows[0] ? filaGrupo(grupo.rows[0]) : null;
+        });
       } catch (error) {
         if (esDuplicado(error)) throw errores.conflicto('Ya existe un curso con ese código');
         if (esConflictoDeIntegridad(error)) {
@@ -452,14 +558,30 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     },
 
     async crearInscripcion(datos) {
-      const estudiante = await pool.query<{ id: string }>(
-        `SELECT u.id FROM usuario u
+      const contexto = await pool.query<{
+        estudiante_id: string;
+        programa_estudiante: string | null;
+        programa_curso: string | null;
+      }>(
+        `SELECT u.id AS estudiante_id, u.programa_id AS programa_estudiante,
+                asg.programa_id AS programa_curso
+         FROM usuario u
          JOIN usuario_rol ur ON ur.usuario_id = u.id
          JOIN rol r ON r.id = ur.rol_id
+         JOIN grupo g ON g.id = $2
+         JOIN asignatura asg ON asg.id = g.asignatura_id
          WHERE u.id = $1 AND r.nombre = 'ESTUDIANTE'`,
-        [datos.estudianteId],
+        [datos.estudianteId, datos.grupoId],
       );
-      if (!estudiante.rows[0]) throw errores.datosInvalidos('El usuario no existe o no es estudiante');
+      const fila = contexto.rows[0];
+      if (!fila) throw errores.datosInvalidos('El usuario no existe, no es estudiante o el curso no existe');
+      if (
+        fila.programa_curso &&
+        fila.programa_estudiante &&
+        fila.programa_curso !== fila.programa_estudiante
+      ) {
+        throw errores.datosInvalidos('El estudiante no pertenece al programa académico del curso');
+      }
 
       try {
         const resultado = await pool.query(
@@ -510,7 +632,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
       }
       const resultado = await pool.query(
         `SELECT u.id, u.nombres, u.apellidos, u.correo, u.documento, u.codigo_institucional,
-                p.nombre AS programa,
+                u.programa_id, p.nombre AS programa, u.turnos_disponibles,
                 (SELECT COALESCE(array_agg(r.nombre ORDER BY r.nombre), '{}')
                  FROM usuario_rol ur JOIN rol r ON r.id = ur.rol_id
                  WHERE ur.usuario_id = u.id) AS roles
@@ -528,7 +650,20 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
         codigoInstitucional: fila.codigo_institucional,
         roles: (fila.roles as string[] | null) ?? [],
         programa: fila.programa,
+        programaId: fila.programa_id ?? null,
+        turnos: (fila.turnos_disponibles as string[] | null) ?? [],
       }));
+    },
+
+    async actualizarTurnos(usuarioId, turnos) {
+      const resultado = await pool.query(
+        `UPDATE usuario SET turnos_disponibles = $2::text[], actualizado_en = now()
+         WHERE id = $1 RETURNING id`,
+        [usuarioId, turnos],
+      );
+      if (!resultado.rows[0]) return null;
+      const usuarios = await this.listarUsuarios({});
+      return usuarios.find((usuario) => usuario.id === usuarioId) ?? null;
     },
   };
 }
@@ -552,6 +687,7 @@ const esquemaAsignatura = z
     codigo: z.string().trim().min(2).max(20),
     nombre: z.string().trim().min(3).max(120),
     creditos: z.number().int().min(1).max(10),
+    programaId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -601,6 +737,15 @@ const esquemaFiltros = z
   })
   .strict();
 
+const esquemaTurnos = z
+  .object({
+    turnos: z
+      .array(z.enum(['MANANA', 'TARDE', 'NOCHE']))
+      .min(1, 'Selecciona al menos un turno')
+      .max(3),
+  })
+  .strict();
+
 const idParam = z.object({ id: z.string().uuid() });
 
 /** Rutas de administración académica (Fase 5): periodos, asignaturas, grupos e inscripciones. */
@@ -613,6 +758,10 @@ export function registrarRutasAdminAcademico(
 
   // ── Periodos ────────────────────────────────────────────────────────────
   app.get('/api/v1/periodos', { preHandler: lecturaAcademica }, async () => repo.listarPeriodos());
+
+  app.get('/api/v1/admin/programas', { preHandler: soloAdminAcademico }, async () =>
+    repo.listarProgramas(),
+  );
 
   app.post('/api/v1/periodos', { preHandler: soloAdminAcademico }, async (peticion, respuesta) => {
     const datos = esquemaPeriodo.parse(peticion.body ?? {});
@@ -720,5 +869,13 @@ export function registrarRutasAdminAcademico(
   app.get('/api/v1/admin/usuarios', { preHandler: soloAdminAcademico }, async (peticion) => {
     const filtros = esquemaFiltros.parse(peticion.query ?? {});
     return repo.listarUsuarios(filtros.rol ? { rol: filtros.rol } : {});
+  });
+
+  app.put('/api/v1/admin/usuarios/:id/turnos', { preHandler: soloAdminAcademico }, async (peticion) => {
+    const { id } = idParam.parse(peticion.params);
+    const { turnos } = esquemaTurnos.parse(peticion.body ?? {});
+    const usuario = await repo.actualizarTurnos(id, turnos);
+    if (!usuario) throw errores.noEncontrado('El usuario no existe');
+    return usuario;
   });
 }

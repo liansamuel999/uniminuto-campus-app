@@ -9,6 +9,8 @@ class RepositorioAdmin {
   // ── Administración académica ────────────────────────────────────────────
   Future<List<dynamic>> periodos() => _api.getList('/periodos');
 
+  Future<List<dynamic>> programas() => _api.getList('/admin/programas');
+
   Future<Map<String, dynamic>> crearPeriodo(Map<String, Object?> datos) =>
       _api.postJson('/periodos', cuerpo: datos);
 
@@ -41,6 +43,17 @@ class RepositorioAdmin {
 
   Future<Map<String, dynamic>> crearGrupo(Map<String, Object?> datos) =>
       _api.postJson('/grupos', cuerpo: datos);
+
+  Future<List<dynamic>> generarHorarioGrupo(String grupoId) =>
+      _api.postList('/admin/grupos/$grupoId/generar-horario');
+
+  Future<void> actualizarTurnos(String usuarioId, List<String> turnos) async {
+    await _api.putJson('/admin/usuarios/$usuarioId/turnos', cuerpo: {'turnos': turnos});
+  }
+
+  Future<Map<String, dynamic>> analitica() => _api.getJson('/admin/analitica');
+
+  Future<Map<String, dynamic>> ejecutarEtl() => _api.postJson('/admin/analitica/etl');
 
   Future<Map<String, dynamic>> actualizarGrupo(String id, Map<String, Object?> datos) =>
       _api.putJson('/grupos/$id', cuerpo: datos);

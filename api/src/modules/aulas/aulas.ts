@@ -383,6 +383,13 @@ export function crearRepositorioAulas(pool: Pool): RepositorioAulas {
             peso: corte.peso,
             nota: resumen.cortes[indice]?.nota ?? null,
             cerrado: corteCerrado(corte.actividades),
+            // Una fecha de cierre por corte: la actividad que cierra de última.
+            cierraEn:
+              corte.actividades
+                .map((actividad) => actividad.cierraEn)
+                .filter((fecha): fecha is string => Boolean(fecha))
+                .sort()
+                .at(-1) ?? null,
             actividades: corte.actividades.map((actividad: ActividadCalificada) => ({
               actividadId: actividad.actividadId,
               titulo: actividad.titulo,

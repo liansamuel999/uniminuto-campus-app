@@ -21,6 +21,14 @@ class _AulasPageState extends ConsumerState<AulasPage> {
   List<Map<String, dynamic>> _proximas = const [];
   bool _cargando = true;
   String? _error;
+  final PageController _paginaProximas = PageController();
+  int _indiceProximas = 0;
+
+  @override
+  void dispose() {
+    _paginaProximas.dispose();
+    super.dispose();
+  }
 
   bool get _esEstudiante =>
       ref.read(sesionProvider).valueOrNull?.roles.contains('ESTUDIANTE') ?? false;
@@ -46,8 +54,8 @@ class _AulasPageState extends ConsumerState<AulasPage> {
       if (!mounted) return;
       setState(() {
         _aulas = _mapas(resultados[0]);
-        // La API ya excluye entregas e intentos hechos; se ordena por fecha y se limita la lista.
-        _proximas = esEstudiante ? _mapas(resultados[1]).take(6).toList() : const [];
+        // La API ya excluye entregas e intentos hechos; se muestran de 5 en 5 con navegación.
+        _proximas = esEstudiante ? _mapas(resultados[1]) : const [];
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
@@ -102,12 +110,25 @@ class _AulasPageState extends ConsumerState<AulasPage> {
 
   Widget _seccionProximas(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
+    final paginas = (_proximas.length / 5).ceil();
+    final visibles = _proximas.length < 5 ? _proximas.length : 5;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Próximas entregas',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Próximas entregas',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (paginas > 1)
+              Text(
+                '${_indiceProximas + 1}/$paginas',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         if (!_cargando && _proximas.isEmpty)
@@ -126,7 +147,59 @@ class _AulasPageState extends ConsumerState<AulasPage> {
               ],
             ),
           ),
-        for (final actividad in _proximas) _tarjetaProxima(context, actividad),
+        if (_proximas.isNotEmpty)
+          SizedBox(
+            height: visibles * 76.0,
+            child: PageView.builder(
+              controller: _paginaProximas,
+              itemCount: paginas,
+              onPageChanged: (indice) => setState(() => _indiceProximas = indice),
+              itemBuilder: (contexto, pagina) {
+                final desde = pagina * 5;
+                final hasta = desde + 5 > _proximas.length ? _proximas.length : desde + 5;
+                return Column(
+                  children: [
+                    for (final actividad in _proximas.sublist(desde, hasta))
+                      _tarjetaProxima(contexto, actividad),
+                  ],
+                );
+              },
+            ),
+          ),
+        if (paginas > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: _indiceProximas == 0
+                    ? null
+                    : () => _paginaProximas.previousPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                        ),
+                icon: const Icon(Icons.chevron_left),
+              ),
+              for (var indice = 0; indice < paginas; indice += 1)
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: indice == _indiceProximas ? colores.primary : colores.outlineVariant,
+                  ),
+                ),
+              IconButton(
+                onPressed: _indiceProximas >= paginas - 1
+                    ? null
+                    : () => _paginaProximas.nextPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                        ),
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
         const SizedBox(height: 16),
       ],
     );

@@ -124,6 +124,13 @@ async function upsertUsuario(
     [usuarioId, usuario.rol],
   );
 
+  if (usuario.docente) {
+    await cliente.query(
+      'UPDATE usuario SET turnos_disponibles = $2::text[] WHERE id = $1',
+      [usuarioId, usuario.turnos ?? ['MANANA', 'TARDE', 'NOCHE']],
+    );
+  }
+
   // Carnet digital (§4.2): uno por usuario, código Code 128 y vigencia de un año.
   const codigoBarras = `UNI-${usuario.codigo}`;
   await cliente.query(
@@ -352,6 +359,11 @@ async function sembrarAulaVirtualDemo(
     [datos.grupoId, datos.nombre],
   );
   const aulaId = aula.rows[0]!.id;
+  const patronActividad = (titulo: string): number => {
+    const codigo = Number(datos.curso.codigoCurso.replace(/\D/g, '')) || 0;
+    const suma = [...titulo].reduce((total, letra) => total + letra.charCodeAt(0), 0);
+    return (codigo + suma) % 4;
+  };
 
   // Espejo para las reglas de Firestore: solo la API (Admin SDK) escribe aulas_index.
   if (getApps().length > 0) {
@@ -570,11 +582,18 @@ async function sembrarAulaVirtualDemo(
           preguntasCorrectas.push({ preguntaId, opcionCorrecta: opciones[0]! });
         }
 
-        // Intentos de ejemplo: el docente ve respuestas correctas e incompletas.
-        const intentosDemo = [
-          { estudiante: datos.estudiantes[1] ?? datos.estudiantes[0], puntaje: 5.0, nota: 5.0, completa: true },
-          { estudiante: datos.estudiantes[3] ?? datos.estudiantes[0], puntaje: 3.5, nota: 3.5, completa: false },
-        ].filter((intento) => intento.estudiante);
+        // Intentos de ejemplo: varían por curso y actividad; algunos cuestionarios quedan sin
+        // responder y otros solo con un intento incompleto.
+        const patronIntento = patronActividad(actividad.titulo);
+        const intentosDemo =
+          patronIntento === 0
+            ? []
+            : [
+                { estudiante: datos.estudiantes[1] ?? datos.estudiantes[0], puntaje: 5.0, nota: 5.0, completa: true },
+                ...(patronIntento >= 2
+                  ? [{ estudiante: datos.estudiantes[3] ?? datos.estudiantes[0], puntaje: 3.5, nota: 3.5, completa: false }]
+                  : []),
+              ].filter((intento) => intento.estudiante);
 
         for (const intento of intentosDemo) {
           const respuestas: Record<string, string[]> = {};
@@ -617,7 +636,8 @@ async function sembrarAulaVirtualDemo(
           'Entrega completa y bien sustentada.',
           'Cumple con lo solicitado; revisa la presentación.',
         ];
-        const estudiantesEntrega = datos.estudiantes.slice(0, 3);
+        const cantidadEntregas = patronActividad(actividad.titulo);
+        const estudiantesEntrega = datos.estudiantes.slice(0, cantidadEntregas);
         for (const [indice, estudiante] of estudiantesEntrega.entries()) {
           const inscripcion = await cliente.query<{ id: string }>(
             'SELECT id FROM inscripcion WHERE estudiante_id = $1 AND grupo_id = $2',
@@ -648,8 +668,8 @@ async function sembrarAulaVirtualDemo(
               new Date(Date.now() - (indice + 1) * 86_400_000).toISOString(),
             ],
           );
-          // Algunas entregas quedan sin calificar para mostrar el trabajo pendiente del docente.
-          if (entregada.rowCount && indice < notas.length) {
+          // Algunas entregas quedan sin calificar y algunas tareas sin entregar.
+          if (entregada.rowCount && indice < Math.max(0, cantidadEntregas - 1)) {
             await cliente.query(
               `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
                VALUES ($1, $2, $3, $4)
@@ -663,7 +683,116 @@ async function sembrarAulaVirtualDemo(
   }
 }
 
-/** Espejo de foros para las reglas de Firestore (D-78) y anuncios ficticios para la demo. */
+/** Evidencias variables: algunas tareas y cuestionarios quedan sin responder en los tres cortes. */
+async function sembrarEvidenciasVariadas(cliente: PoolClient): Promise<void> {
+  const actividades = await cliente.query<{
+    actividad_id: string;
+    tipo: string;
+    titulo: string;
+    codigo_curso: string;
+    grupo_id: string;
+  }>(
+    `SELECT act.id AS actividad_id, act.tipo, act.titulo, g.codigo_curso, g.id AS grupo_id
+     FROM actividad act
+     JOIN unidad un ON un.id = act.unidad_id
+     JOIN aula au ON au.id = un.aula_id
+     JOIN grupo g ON g.id = au.grupo_id
+     WHERE g.codigo_curso = ANY($1::text[])
+       AND act.tipo IN ('TAREA', 'CUESTIONARIO')
+     ORDER BY g.codigo_curso, act.titulo`,
+    [CURSOS.map((curso) => curso.codigoCurso)],
+  );
+  const numero = (texto: string): number =>
+    [...texto].reduce((total, letra) => total + letra.charCodeAt(0), 0);
+
+  for (const actividad of actividades.rows) {
+    const codigo = Number(actividad.codigo_curso.replace(/\D/g, '')) || 0;
+    const patron = (codigo + numero(actividad.titulo)) % 4;
+    const estudiantes = await cliente.query<{ estudiante_id: string; inscripcion_id: string }>(
+      `SELECT i.estudiante_id, i.id AS inscripcion_id
+       FROM inscripcion i
+       WHERE i.grupo_id = $1 AND i.estado = 'ACTIVA'
+       ORDER BY i.estudiante_id LIMIT 3`,
+      [actividad.grupo_id],
+    );
+    if (actividad.tipo === 'TAREA') {
+      const notas = [4.5, 3.8];
+      for (const [indice, estudiante] of estudiantes.rows.slice(0, patron).entries()) {
+        const entregada = await cliente.query(
+          `INSERT INTO entrega (id, actividad_id, estudiante_id, texto, adjuntos, creada_en_cliente, estado)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, 'ENVIADA')
+           ON CONFLICT (actividad_id, estudiante_id) DO NOTHING RETURNING id`,
+          [
+            randomUUID(),
+            actividad.actividad_id,
+            estudiante.estudiante_id,
+            indice === 0
+              ? 'Entrega de demostración: revisa el archivo adjunto.'
+              : 'Trabajo desarrollado según la guía de la unidad.',
+            JSON.stringify([
+              {
+                objetoKey: 'aulas/demo/guia-unidad.pdf',
+                nombre: 'guia-unidad.pdf',
+                mime: 'application/pdf',
+                tamano: 860,
+              },
+            ]),
+            new Date(Date.now() - (indice + 1) * 86_400_000).toISOString(),
+          ],
+        );
+        if (entregada.rowCount && indice < Math.max(0, patron - 1)) {
+          await cliente.query(
+            `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+            [
+              actividad.actividad_id,
+              estudiante.inscripcion_id,
+              notas[Math.min(indice, notas.length - 1)],
+              'Entrega de demostración calificada.',
+            ],
+          );
+        }
+      }
+    } else if (patron > 0) {
+      const intentos = estudiantes.rows.slice(0, Math.min(patron, 2));
+      for (const [indice, estudiante] of intentos.entries()) {
+        const respuestas = await cliente.query<{ respuestas: Record<string, string[]> | null }>(
+          `SELECT jsonb_object_agg(p.id::text, jsonb_build_array(o.id::text)) AS respuestas
+           FROM pregunta p
+           JOIN opcion_respuesta o ON o.pregunta_id = p.id AND o.es_correcta
+           WHERE p.actividad_id = $1`,
+          [actividad.actividad_id],
+        );
+        if (!respuestas.rows[0]?.respuestas) continue;
+        await cliente.query(
+          `INSERT INTO intento_cuestionario (actividad_id, estudiante_id, respuestas, puntaje)
+           VALUES ($1, $2, $3::jsonb, $4)
+           ON CONFLICT (actividad_id, estudiante_id) DO NOTHING`,
+          [
+            actividad.actividad_id,
+            estudiante.estudiante_id,
+            JSON.stringify(respuestas.rows[0].respuestas),
+            indice === 0 ? 5.0 : 3.5,
+          ],
+        );
+        await cliente.query(
+          `INSERT INTO calificacion (actividad_id, inscripcion_id, nota, retroalimentacion)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (actividad_id, inscripcion_id) DO NOTHING`,
+          [
+            actividad.actividad_id,
+            estudiante.inscripcion_id,
+            indice === 0 ? 5.0 : 3.5,
+            'Intento de cuestionario de demostración.',
+          ],
+        );
+      }
+    }
+  }
+}
+
+
 async function sembrarComunicacionDemo(): Promise<void> {
   if (getApps().length === 0) {
     log('Sin Firebase: se omite el espejo de foros y los anuncios de Firestore');
@@ -819,13 +948,19 @@ async function subirArchivosDemo(): Promise<void> {
 const aulasEliminadas: string[] = [];
 const forosEliminados: string[] = [];
 
+function programaDeAsignatura(codigo: string): string {
+  if (codigo.startsWith('ADM')) return 'Administración de Empresas';
+  if (codigo.startsWith('PSI')) return 'Psicología';
+  return 'Ingeniería de Sistemas';
+}
+
 /** Elimina cursos y actividades con nombres de prueba creados desde la app en sesiones anteriores. */
 async function limpiarDatosDePrueba(
   cliente: PoolClient,
 ): Promise<{ aulas: string[]; foros: string[] }> {
   const asignaturas = await cliente.query<{ id: string }>(
     `SELECT id FROM asignatura
-     WHERE codigo IN ('1111111', '2221') OR lower(nombre) IN ('222211', 'lick')`,
+     WHERE codigo IN ('1111111', '2221', '2341') OR lower(nombre) IN ('222211', 'lick', 'prueba')`,
   );
   const asignaturaIds = asignaturas.rows.map((fila) => fila.id);
   const grupos = asignaturaIds.length
@@ -1056,14 +1191,64 @@ async function principal(): Promise<void> {
     const uidPorCorreo = new Map(usuariosSembrados.map((usuario) => [usuario.correo, usuario.uid]));
 
     log('Cursos, inscripciones, horarios y aulas virtuales');
+    const cursosClave = CURSOS.map((curso) => curso.codigoCurso);
+    // Reinicia las evidencias de la demo para que la variación de talleres sea reproducible.
+    await cliente.query(
+      `DELETE FROM calificacion WHERE actividad_id IN (
+         SELECT act.id FROM actividad act
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
+         WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+    await cliente.query(
+      `DELETE FROM intento_cuestionario WHERE actividad_id IN (
+         SELECT act.id FROM actividad act
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
+         WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+    await cliente.query(
+      `DELETE FROM entrega WHERE actividad_id IN (
+         SELECT act.id FROM actividad act
+         JOIN unidad un ON un.id = act.unidad_id
+         JOIN aula au ON au.id = un.aula_id
+         JOIN grupo g ON g.id = au.grupo_id
+         WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+    await cliente.query(
+      `DELETE FROM nota_corte WHERE inscripcion_id IN (
+         SELECT i.id FROM inscripcion i JOIN grupo g ON g.id = i.grupo_id
+         WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+    // Sincroniza los horarios exactamente con la semilla (evita franjas viejas duplicadas).
+    await cliente.query(
+      `DELETE FROM horario WHERE grupo_id IN (
+         SELECT g.id FROM grupo g WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+    // Sincroniza la matrícula exactamente con la semilla: retira estudiantes de pasadas anteriores.
+    await cliente.query(
+      `DELETE FROM inscripcion WHERE grupo_id IN (
+         SELECT g.id FROM grupo g WHERE g.codigo_curso = ANY($1::text[]))`,
+      [cursosClave],
+    );
+
     const asignaturasProcesadas = new Set<string>();
     for (const curso of CURSOS) {
       if (!asignaturasProcesadas.has(curso.asignatura)) {
+        const programaId = programaPorNombre.get(programaDeAsignatura(curso.asignatura)) ?? null;
         await cliente.query(
-          `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio) VALUES ($1, $2, $3, $4)
+          `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio, programa_id)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos,
-             requiere_laboratorio = EXCLUDED.requiere_laboratorio`,
-          [curso.asignatura, curso.nombre, curso.creditos, curso.requiereLaboratorio],
+             requiere_laboratorio = EXCLUDED.requiere_laboratorio, programa_id = EXCLUDED.programa_id`,
+          [curso.asignatura, curso.nombre, curso.creditos, curso.requiereLaboratorio, programaId],
         );
         asignaturasProcesadas.add(curso.asignatura);
       }
@@ -1143,7 +1328,18 @@ async function principal(): Promise<void> {
     );
 
     log('Entregas e intentos de ejemplo (actividades ya realizadas)');
-    await sembrarActividadesRealizadasDemo(cliente);
+    await sembrarEvidenciasVariadas(cliente);
+    // La variación de talleres la genera sembrarAulaVirtualDemo por curso; se recalcula la nota
+    // de corte de todas las evidencias creadas.
+    await cliente.query(
+      `INSERT INTO nota_corte (inscripcion_id, corte_id, nota_calculada)
+       SELECT c.inscripcion_id, a.corte_id,
+              ROUND(SUM(c.nota * a.peso_porcentual) / NULLIF(SUM(a.peso_porcentual), 0), 2)
+       FROM calificacion c JOIN actividad a ON a.id = c.actividad_id
+       GROUP BY c.inscripcion_id, a.corte_id
+       ON CONFLICT (inscripcion_id, corte_id)
+       DO UPDATE SET nota_calculada = EXCLUDED.nota_calculada, actualizada_en = now()`,
+    );
 
     // Datos de demostración que se actualizan en cada pasada de la semilla.
     await cliente.query(`UPDATE actividad SET revision_permitida = true WHERE tipo = 'CUESTIONARIO'`);

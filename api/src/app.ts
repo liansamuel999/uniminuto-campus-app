@@ -30,6 +30,7 @@ import {
   registrarRutasAdminAcademico,
   type RepositorioAdminAcademico,
 } from './modules/admin/admin_academico.js';
+import { crearRepositorioAnalitica, registrarRutasAnalitica } from './modules/admin/analitica.js';
 import {
   crearRepositorioAdminEspacios,
   registrarRutasAdminEspacios,
@@ -74,6 +75,7 @@ import { crearRepositorioEntregas, registrarRutasEntregas, type RepositorioEntre
 import { crearRepositorioCuestionarios, registrarRutasCuestionarios, type RepositorioCuestionarios } from './modules/actividades/cuestionarios.js';
 import { crearRepositorioArchivos, registrarRutasArchivos, type RepositorioArchivos } from './modules/archivos/archivos.js';
 import { crearRepositorioCorreos, registrarRutasCorreos, type RepositorioCorreos } from './modules/comunicacion/correos.js';
+import { crearRepositorioMensajes, registrarRutasMensajes } from './modules/comunicacion/mensajes.js';
 import {
   crearRepositorioComunicacion,
   registrarRutasComunicacion,
@@ -81,6 +83,7 @@ import {
 } from './modules/comunicacion/firestore_comunicacion.js';
 import { crearRepositorioCalificaciones, registrarRutasCalificaciones, type RepositorioCalificaciones } from './modules/calificaciones/calificaciones.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
+import { registrarRutasCaptcha } from './modules/auth/captcha.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
 
@@ -192,6 +195,7 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   });
 
   registrarPluginAuth(app, opciones.verificador ?? (await crearVerificador(env)));
+  registrarRutasCaptcha(app);
 
   const pool = crearPool(env.DATABASE_URL);
   const clienteS3 = crearClienteS3(env);
@@ -216,6 +220,7 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     app,
     opciones.repositorioAdminAcademico ?? crearRepositorioAdminAcademico(pool),
   );
+  registrarRutasAnalitica(app, crearRepositorioAnalitica(pool, clienteS3, env.S3_BUCKET));
   registrarRutasAdminEspacios(
     app,
     opciones.repositorioAdminEspacios ?? crearRepositorioAdminEspacios(pool),
@@ -266,6 +271,7 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
     opciones.repositorioCuestionarios ?? crearRepositorioCuestionarios(pool),
   );
   registrarRutasCorreos(app, opciones.repositorioCorreos ?? crearRepositorioCorreos(pool));
+  registrarRutasMensajes(app, crearRepositorioMensajes(pool));
   registrarRutasComunicacion(
     app,
     opciones.repositorioComunicacion ?? crearRepositorioComunicacion(pool),

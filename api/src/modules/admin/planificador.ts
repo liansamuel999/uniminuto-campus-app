@@ -52,6 +52,7 @@ interface ResultadoPlanificacion {
 export interface RepositorioPlanificador {
   resumen(): Promise<{ grupos: GrupoPlan[]; salones: SalonPlan[]; horarios: HorarioPlan[] }>;
   planificar(): Promise<ResultadoPlanificacion>;
+  generarHorario(grupoId: string): Promise<HorarioPlan[]>;
   crearHorario(datos: {
     grupoId: string;
     diaSemana: number;
@@ -216,6 +217,63 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
     return todos.find((horario) => horario.id === id) ?? null;
   }
 
+  async function validarChoque(datos: {
+    grupoId: string;
+    salonId: string;
+    diaSemana: number;
+    horaInicio: string;
+    horaFin: string;
+    excluirHorarioId?: string;
+  }): Promise<void> {
+    const resultado = await pool.query<{
+      salon_id: string;
+      docente_id: string | null;
+      estudiantes: boolean;
+    }>(
+      `SELECT h.salon_id, g.docente_id,
+              EXISTS (
+                SELECT 1 FROM inscripcion i1
+                JOIN inscripcion i2 ON i2.estudiante_id = i1.estudiante_id
+                WHERE i1.grupo_id = cur.id AND i2.grupo_id = g.id
+                  AND i1.estado = 'ACTIVA' AND i2.estado = 'ACTIVA'
+              ) AS estudiantes
+       FROM horario h
+       JOIN grupo g ON g.id = h.grupo_id
+       JOIN grupo cur ON cur.id = $1
+       WHERE h.dia_semana = $2
+         AND h.hora_inicio < $5::time AND h.hora_fin > $4::time
+         AND ($6::uuid IS NULL OR h.id <> $6)
+         AND (
+           h.salon_id = $3
+           OR (cur.docente_id IS NOT NULL AND g.docente_id = cur.docente_id)
+           OR EXISTS (
+             SELECT 1 FROM inscripcion i1
+             JOIN inscripcion i2 ON i2.estudiante_id = i1.estudiante_id
+             WHERE i1.grupo_id = cur.id AND i2.grupo_id = g.id
+               AND i1.estado = 'ACTIVA' AND i2.estado = 'ACTIVA'
+           )
+         )
+       LIMIT 1`,
+      [
+        datos.grupoId,
+        datos.diaSemana,
+        datos.salonId,
+        datos.horaInicio,
+        datos.horaFin,
+        datos.excluirHorarioId ?? null,
+      ],
+    );
+    const choque = resultado.rows[0];
+    if (!choque) return;
+    if (choque.salon_id === datos.salonId) {
+      throw errores.conflicto('El salón ya está ocupado en ese día y hora');
+    }
+    if (choque.docente_id) {
+      throw errores.conflicto('El docente ya tiene otra clase en ese día y hora');
+    }
+    throw errores.conflicto('Algún estudiante del curso ya tiene otra clase en ese día y hora');
+  }
+
   async function crearHorarioAutomatico(datos: {
     grupoId: string;
     diaSemana: number;
@@ -260,6 +318,13 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
         'No hay salón libre que cumpla capacidad y equipos para ese día y hora; mueve otro horario o crea más salones',
       );
     }
+    await validarChoque({
+      grupoId: datos.grupoId,
+      salonId: salon.id,
+      diaSemana: datos.diaSemana,
+      horaInicio: datos.horaInicio,
+      horaFin: datos.horaFin,
+    });
 
     const creado = await pool.query<{ id: string }>(
       `INSERT INTO horario (grupo_id, salon_id, dia_semana, hora_inicio, hora_fin)
@@ -269,6 +334,124 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
     const horarioCreado = await cargarHorario(creado.rows[0]!.id);
     if (!horarioCreado) throw errores.conflicto('No se pudo crear el horario');
     return horarioCreado;
+  }
+
+  /**
+   * Genera un horario completo (días y salones) para un curso sin horario.
+   *
+   * Usa los créditos como horas semanales, reparte en una o dos sesiones y respeta:
+   *  - los turnos disponibles del docente (`usuario.turnos_disponibles`);
+   *  - la capacidad y el tipo de salón (laboratorio cuando la asignatura lo exige);
+   *  - que no se cruce con el salón, el docente ni ningún estudiante inscrito.
+   */
+  async function generarHorarioCompleto(grupoId: string): Promise<HorarioPlan[]> {
+    const datos = await pool.query<{
+      id: string;
+      creditos: number;
+      requiere_laboratorio: boolean;
+      docente_id: string | null;
+      estudiantes: number;
+      turnos: string[] | null;
+    }>(
+      `SELECT g.id, asg.creditos, asg.requiere_laboratorio, g.docente_id,
+              (SELECT COUNT(*)::int FROM inscripcion i WHERE i.grupo_id = g.id AND i.estado = 'ACTIVA') AS estudiantes,
+              d.turnos_disponibles AS turnos
+       FROM grupo g
+       JOIN asignatura asg ON asg.id = g.asignatura_id
+       LEFT JOIN usuario d ON d.id = g.docente_id
+       WHERE g.id = $1`,
+      [grupoId],
+    );
+    const grupo = datos.rows[0];
+    if (!grupo) throw errores.noEncontrado('El curso no existe');
+
+    const existentes = await pool.query<{ id: string }>('SELECT id FROM horario WHERE grupo_id = $1', [
+      grupoId,
+    ]);
+    if ((existentes.rowCount ?? 0) > 0) {
+      throw errores.conflicto('El curso ya tiene horario. Elimina o mueve las franjas existentes.');
+    }
+
+    const salones = (await cargarSalones()).filter((salon) => {
+      const tipoOk = grupo.requiere_laboratorio ? salon.tipo === 'LABORATORIO' : salon.tipo === 'AULA';
+      return tipoOk && salon.capacidad >= grupo.estudiantes;
+    });
+    if (salones.length === 0) {
+      throw errores.conflicto('No hay salones con la capacidad o el tipo requerido para este curso');
+    }
+
+    const ventanas: Record<string, [number, number]> = {
+      MANANA: [6, 12],
+      TARDE: [12, 18],
+      NOCHE: [18, 22],
+    };
+    const turnos = (grupo.turnos && grupo.turnos.length > 0
+      ? grupo.turnos
+      : ['MANANA', 'TARDE', 'NOCHE']) as Array<keyof typeof ventanas>;
+    const rangos = turnos
+      .map((turno) => ventanas[turno])
+      .filter((rango): rango is [number, number] => Boolean(rango))
+      .sort((a, b) => a[0] - b[0]);
+
+    const totalHoras = Math.max(1, Math.min(6, Number(grupo.creditos)));
+    const horasPrimera = Math.min(2, Math.ceil(totalHoras / 2));
+    const horasSegunda = totalHoras - horasPrimera;
+    const sesiones = horasSegunda > 0 ? [horasPrimera, horasSegunda] : [horasPrimera];
+
+    const dias = [1, 3, 2, 4, 5];
+    const creados: string[] = [];
+    const intentarSesion = async (horas: number, indice: number): Promise<boolean> => {
+      for (const dia of dias) {
+        if (indice === 1 && creados.length === 1) {
+          // Evita que las dos sesiones queden el mismo día.
+          const primero = await pool.query<{ dia_semana: number }>(
+            'SELECT dia_semana FROM horario WHERE id = $1',
+            [creados[0]],
+          );
+          if (primero.rows[0]?.dia_semana === dia) continue;
+        }
+        for (const [desde, hasta] of rangos) {
+          for (let inicio = desde; inicio + horas <= hasta; inicio += 1) {
+            const horaInicio = `${String(inicio).padStart(2, '0')}:00`;
+            const horaFin = `${String(inicio + horas).padStart(2, '0')}:00`;
+            for (const salon of salones) {
+              try {
+                await validarChoque({
+                  grupoId,
+                  salonId: salon.id,
+                  diaSemana: dia,
+                  horaInicio,
+                  horaFin,
+                });
+                const creado = await pool.query<{ id: string }>(
+                  `INSERT INTO horario (grupo_id, salon_id, dia_semana, hora_inicio, hora_fin)
+                   VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+                  [grupoId, salon.id, dia, horaInicio, horaFin],
+                );
+                creados.push(creado.rows[0]!.id);
+                return true;
+              } catch {
+                // Sigue con el siguiente salón/franja.
+              }
+            }
+          }
+        }
+      }
+      return false;
+    };
+
+    for (const [indice, horas] of sesiones.entries()) {
+      const ok = await intentarSesion(horas, indice);
+      if (!ok) {
+        for (const id of creados) await pool.query('DELETE FROM horario WHERE id = $1', [id]);
+        throw errores.conflicto(
+          'No se encontró una combinación de días, horas y salones sin choques para este curso',
+        );
+      }
+    }
+
+    const horarios = await Promise.all(creados.map((id) => cargarHorario(id)));
+    return horarios.filter((horario): horario is HorarioPlan => horario !== null);
   }
 
   return {
@@ -393,6 +576,10 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       return crearHorarioAutomatico(datos);
     },
 
+    async generarHorario(grupoId) {
+      return generarHorarioCompleto(grupoId);
+    },
+
     async moverHorario(id, datos) {
       const horario = await cargarHorario(id);
       if (!horario) throw errores.noEncontrado('El horario no existe');
@@ -436,6 +623,14 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
       ) {
         throw errores.conflicto('El salón ya está ocupado en ese día y hora');
       }
+      await validarChoque({
+        grupoId: horario.grupoId,
+        salonId,
+        diaSemana,
+        horaInicio,
+        horaFin,
+        excluirHorarioId: id,
+      });
 
       await pool.query(
         `UPDATE horario SET salon_id = $2, dia_semana = $3, hora_inicio = $4, hora_fin = $5 WHERE id = $1`,
@@ -467,7 +662,17 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
           await cliente.query('DELETE FROM calificacion WHERE actividad_id = ANY($1::uuid[])', [ids]);
           await cliente.query('DELETE FROM intento_cuestionario WHERE actividad_id = ANY($1::uuid[])', [ids]);
           await cliente.query('DELETE FROM entrega WHERE actividad_id = ANY($1::uuid[])', [ids]);
+          await cliente.query('DELETE FROM actividad_recurso WHERE actividad_id = ANY($1::uuid[])', [ids]);
+          await cliente.query('DELETE FROM actividad WHERE id = ANY($1::uuid[])', [ids]);
         }
+        await cliente.query(
+          'DELETE FROM contenido WHERE unidad_id IN (SELECT id FROM unidad WHERE aula_id IN (SELECT id FROM aula WHERE grupo_id = $1))',
+          [id],
+        );
+        await cliente.query(
+          'DELETE FROM unidad WHERE aula_id IN (SELECT id FROM aula WHERE grupo_id = $1)',
+          [id],
+        );
         await cliente.query(
           `DELETE FROM nota_corte WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE grupo_id = $1)`,
           [id],
@@ -475,6 +680,7 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
         await cliente.query('DELETE FROM inscripcion WHERE grupo_id = $1', [id]);
         await cliente.query('DELETE FROM horario WHERE grupo_id = $1', [id]);
         await cliente.query('DELETE FROM aula WHERE grupo_id = $1', [id]);
+        await cliente.query('DELETE FROM corte WHERE grupo_id = $1', [id]);
         const eliminado = await cliente.query('DELETE FROM grupo WHERE id = $1', [id]);
         return (eliminado.rowCount ?? 0) > 0;
       });
@@ -510,6 +716,11 @@ export function registrarRutasPlanificador(
   app.get('/api/v1/admin/planificacion', { preHandler: admin }, async () => repo.resumen());
 
   app.post('/api/v1/admin/planificacion/ejecutar', { preHandler: admin }, async () => repo.planificar());
+
+  app.post('/api/v1/admin/grupos/:id/generar-horario', { preHandler: admin }, async (peticion) => {
+    const { id } = idParam.parse(peticion.params);
+    return repo.generarHorario(id);
+  });
 
   app.post('/api/v1/grupos/:id/horarios', { preHandler: admin }, async (peticion, respuesta) => {
     const { id } = idParam.parse(peticion.params);

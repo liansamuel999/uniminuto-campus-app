@@ -30,6 +30,8 @@ export interface UsuarioSemilla {
   readonly documento: string;
   readonly rol: string;
   readonly docente?: boolean;
+  /** Turnos en los que puede dictar clase: MANANA, TARDE, NOCHE. */
+  readonly turnos?: readonly string[];
   /** Programa al que pertenece el estudiante (los docentes y administrativos no tienen). */
   readonly programa?: string;
 }
@@ -50,12 +52,12 @@ const ESTUDIANTES = (filas: Array<[string, string, string, string, string]>): Us
 
 export const USUARIOS: readonly UsuarioSemilla[] = [
   // Docentes
-  { correo: 'carolina.pena@demo.uniminuto.test', nombres: 'Carolina', apellidos: 'Peña Salgado', codigo: 'DOC-201', documento: '2002002001', rol: 'DOCENTE', docente: true },
-  { correo: 'diego.suarez@demo.uniminuto.test', nombres: 'Diego Armando', apellidos: 'Suárez Ortiz', codigo: 'DOC-202', documento: '2002002002', rol: 'DOCENTE', docente: true },
-  { correo: 'andrea.rincon@demo.uniminuto.test', nombres: 'Andrea', apellidos: 'Rincón Molina', codigo: 'DOC-203', documento: '2002002003', rol: 'DOCENTE', docente: true },
-  { correo: 'julian.pardo@demo.uniminuto.test', nombres: 'Julián', apellidos: 'Pardo Benítez', codigo: 'DOC-204', documento: '2002002004', rol: 'DOCENTE', docente: true },
-  { correo: 'paula.restrepo@demo.uniminuto.test', nombres: 'Paula', apellidos: 'Restrepo Lozano', codigo: 'DOC-205', documento: '2002002005', rol: 'DOCENTE', docente: true },
-  { correo: 'sofia.herrera@demo.uniminuto.test', nombres: 'Sofía', apellidos: 'Herrera Pineda', codigo: 'DOC-206', documento: '2002002006', rol: 'DOCENTE', docente: true },
+  { correo: 'carolina.pena@demo.uniminuto.test', nombres: 'Carolina', apellidos: 'Peña Salgado', codigo: 'DOC-201', documento: '2002002001', rol: 'DOCENTE', docente: true, turnos: ['MANANA', 'TARDE'] },
+  { correo: 'diego.suarez@demo.uniminuto.test', nombres: 'Diego Armando', apellidos: 'Suárez Ortiz', codigo: 'DOC-202', documento: '2002002002', rol: 'DOCENTE', docente: true, turnos: ['TARDE', 'NOCHE'] },
+  { correo: 'andrea.rincon@demo.uniminuto.test', nombres: 'Andrea', apellidos: 'Rincón Molina', codigo: 'DOC-203', documento: '2002002003', rol: 'DOCENTE', docente: true, turnos: ['MANANA'] },
+  { correo: 'julian.pardo@demo.uniminuto.test', nombres: 'Julián', apellidos: 'Pardo Benítez', codigo: 'DOC-204', documento: '2002002004', rol: 'DOCENTE', docente: true, turnos: ['MANANA', 'TARDE'] },
+  { correo: 'paula.restrepo@demo.uniminuto.test', nombres: 'Paula', apellidos: 'Restrepo Lozano', codigo: 'DOC-205', documento: '2002002005', rol: 'DOCENTE', docente: true, turnos: ['TARDE', 'NOCHE'] },
+  { correo: 'sofia.herrera@demo.uniminuto.test', nombres: 'Sofía', apellidos: 'Herrera Pineda', codigo: 'DOC-206', documento: '2002002006', rol: 'DOCENTE', docente: true, turnos: ['NOCHE'] },
 
   // Administrativos y apoyo
   { correo: 'luisa.castro@demo.uniminuto.test', nombres: 'Luisa Fernanda', apellidos: 'Castro Ríos', codigo: 'ADM-301', documento: '3003003001', rol: 'ADMIN_ACADEMICO' },
@@ -128,7 +130,7 @@ export const CURSOS: readonly CursoSemilla[] = [
     asignatura: 'IS-201', nombre: 'Bases de Datos', creditos: 3, requiereLaboratorio: true,
     codigoCurso: '2235', numero: '02', docente: 'carolina.pena@demo.uniminuto.test',
     estudiantes: est('valentina.ramirez', 'felipe.castillo', 'laura.jimenez'),
-    horarios: [[2, '09:00', '11:00', 'A-204'], [4, '09:00', '11:00', 'A-204']],
+    horarios: [[2, '11:00', '13:00', 'A-204'], [4, '11:00', '13:00', 'A-204']],
   },
   {
     asignatura: 'IS-301', nombre: 'Redes de Computadores', creditos: 3, requiereLaboratorio: true,

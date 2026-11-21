@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
+import 'analitica_tab.dart';
 import 'planificacion_tab.dart';
 
 /// Panel del Admin Académico: periodos, asignaturas, cursos, inscripciones y horarios/salones.
@@ -12,7 +13,7 @@ class AdminAcademicoPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Administración académica'),
@@ -24,6 +25,7 @@ class AdminAcademicoPage extends ConsumerWidget {
               Tab(text: 'Cursos'),
               Tab(text: 'Inscripciones'),
               Tab(text: 'Horarios y salones'),
+              Tab(text: 'Analítica'),
             ],
           ),
         ),
@@ -34,6 +36,7 @@ class AdminAcademicoPage extends ConsumerWidget {
             _GruposTab(),
             _InscripcionesTab(),
             PlanificacionTab(),
+            AnaliticaTab(),
           ],
         ),
       ),
@@ -264,6 +267,7 @@ class _AsignaturasTab extends ConsumerStatefulWidget {
 
 class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
   List<Map<String, dynamic>> _asignaturas = const [];
+  List<Map<String, dynamic>> _programas = const [];
   bool _cargando = true;
   String? _error;
 
@@ -279,8 +283,14 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
       _error = null;
     });
     try {
-      final datos = await ref.read(repositorioAdminProvider).asignaturas();
-      if (mounted) setState(() => _asignaturas = _aMapas(datos));
+      final repo = ref.read(repositorioAdminProvider);
+      final resultados = await Future.wait([repo.asignaturas(), repo.programas()]);
+      if (mounted) {
+        setState(() {
+          _asignaturas = _aMapas(resultados[0]);
+          _programas = _aMapas(resultados[1]);
+        });
+      }
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
     } finally {
@@ -291,7 +301,7 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
   Future<void> _editar([Map<String, dynamic>? actual]) async {
     final datos = await showDialog<Map<String, Object?>>(
       context: context,
-      builder: (_) => _DialogoAsignatura(actual: actual),
+      builder: (_) => _DialogoAsignatura(actual: actual, programas: _programas),
     );
     if (datos == null) return;
     try {
@@ -337,7 +347,10 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
               child: ListTile(
                 leading: const Icon(Icons.menu_book_outlined),
                 title: Text('${asignatura['nombre']}'),
-                subtitle: Text('${asignatura['codigo']} · ${asignatura['creditos']} créditos'),
+                subtitle: Text(
+                  '${asignatura['codigo']} · ${asignatura['creditos']} créditos'
+                  '${asignatura['programa'] == null ? '' : ' · ${asignatura['programa']}'}',
+                ),
                 trailing: PopupMenuButton<String>(
                   onSelected: (valor) => valor == 'editar' ? _editar(asignatura) : _eliminar(asignatura),
                   itemBuilder: (_) => const [
@@ -354,9 +367,10 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
 }
 
 class _DialogoAsignatura extends StatefulWidget {
-  const _DialogoAsignatura({this.actual});
+  const _DialogoAsignatura({this.actual, required this.programas});
 
   final Map<String, dynamic>? actual;
+  final List<Map<String, dynamic>> programas;
 
   @override
   State<_DialogoAsignatura> createState() => _DialogoAsignaturaState();
@@ -366,6 +380,16 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
   late final TextEditingController _codigo = TextEditingController(text: '${widget.actual?['codigo'] ?? ''}');
   late final TextEditingController _nombre = TextEditingController(text: '${widget.actual?['nombre'] ?? ''}');
   late final TextEditingController _creditos = TextEditingController(text: '${widget.actual?['creditos'] ?? 3}');
+  String? _programaId;
+
+  @override
+  void initState() {
+    super.initState();
+    _programaId = widget.actual?['programaId'] as String?;
+    if (_programaId == null && widget.programas.isNotEmpty) {
+      _programaId = '${widget.programas.first['id']}';
+    }
+  }
 
   @override
   void dispose() {
@@ -390,6 +414,15 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Créditos'),
             ),
+            DropdownButtonFormField<String>(
+              initialValue: _programaId,
+              decoration: const InputDecoration(labelText: 'Programa académico'),
+              items: [
+                for (final programa in widget.programas)
+                  DropdownMenuItem(value: '${programa['id']}', child: Text('${programa['nombre']}')),
+              ],
+              onChanged: (valor) => setState(() => _programaId = valor),
+            ),
           ],
         ),
       ),
@@ -400,6 +433,7 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
             'codigo': _codigo.text.trim(),
             'nombre': _nombre.text.trim(),
             'creditos': int.tryParse(_creditos.text.trim()) ?? 0,
+            'programaId': _programaId,
           }),
           child: const Text('Guardar'),
         ),
@@ -494,6 +528,23 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
     }
   }
 
+  Future<void> _generarHorario(Map<String, dynamic> grupo) async {
+    try {
+      final horarios = await ref.read(repositorioAdminProvider).generarHorarioGrupo('${grupo['id']}');
+      await _cargar();
+      if (mounted) {
+        _aviso(
+          context,
+          horarios.isEmpty
+              ? 'No se generaron franjas.'
+              : 'Horario generado: ${horarios.length} franja(s) con día y salón.',
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) _aviso(context, error.mensaje);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -517,15 +568,18 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
                 title: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']}'),
                 subtitle: Text(
                   '${grupo['codigoAsignatura']} · ${grupo['periodo']} · '
+                  '${grupo['programa'] ?? 'Sin programa'} · '
                   '${grupo['docente'] ?? 'Sin docente'} · ${grupo['estudiantes']} estudiantes',
                 ),
                 trailing: PopupMenuButton<String>(
                   onSelected: (valor) {
                     if (valor == 'asignar') _asignar(grupo);
+                    if (valor == 'generar') _generarHorario(grupo);
                     if (valor == 'eliminar') _eliminar(grupo);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'asignar', child: Text('Editar / asignar docente')),
+                    PopupMenuItem(value: 'generar', child: Text('Generar días y salones')),
                     PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
                   ],
                 ),
@@ -739,15 +793,23 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
 
   Future<void> _crear() async {
     if (_grupoId == null) return;
+    final estudiantes = _estudiantesFiltrados;
+    if (estudiantes.isEmpty) {
+      _aviso(context, 'No hay estudiantes del programa de este curso para inscribir.');
+      return;
+    }
     final estudianteId = await showDialog<String>(
       context: context,
       builder: (contexto) => SimpleDialog(
-        title: const Text('Inscribir estudiante'),
+        title: const Text('Inscribir estudiante del programa'),
         children: [
-          for (final estudiante in _estudiantes)
+          for (final estudiante in estudiantes)
             SimpleDialogOption(
               onPressed: () => Navigator.of(contexto).pop('${estudiante['id']}'),
-              child: Text('${estudiante['nombres']} ${estudiante['apellidos']}'),
+              child: Text(
+                '${estudiante['nombres']} ${estudiante['apellidos']}'
+                '${estudiante['programa'] == null ? '' : ' · ${estudiante['programa']}'}',
+              ),
             ),
         ],
       ),
@@ -762,6 +824,21 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
     } on ApiException catch (error) {
       if (mounted) _aviso(context, error.mensaje);
     }
+  }
+
+  Map<String, dynamic>? get _grupoActual {
+    for (final grupo in _grupos) {
+      if ('${grupo['id']}' == _grupoId) return grupo;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> get _estudiantesFiltrados {
+    final programaId = _grupoActual?['programaId'] as String?;
+    if (programaId == null) return _estudiantes;
+    return _estudiantes
+        .where((estudiante) => '${estudiante['programaId'] ?? ''}' == programaId)
+        .toList();
   }
 
   Future<void> _cambiarEstado(Map<String, dynamic> inscripcion) async {
@@ -800,7 +877,7 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _grupoId == null || _estudiantes.isEmpty ? null : _crear,
+        onPressed: _grupoId == null || _estudiantesFiltrados.isEmpty ? null : _crear,
         icon: const Icon(Icons.person_add_alt),
         label: const Text('Inscribir'),
       ),
@@ -821,6 +898,14 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
             ],
             onChanged: _cambiarGrupo,
           ),
+          if (_grupoActual?['programa'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Solo se muestran estudiantes de ${_grupoActual!['programa']}.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           const SizedBox(height: 8),
           if (_cargando) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           _ErrorTexto(_error),

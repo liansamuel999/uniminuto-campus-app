@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
@@ -9,8 +9,8 @@ import '../data/comunicacion_repository.dart';
 
 /// Anuncios del aula (servidos por la API sobre Firestore, D-48 y D-78).
 ///
-/// Los publica el docente del aula; si marca «importante», la app llama a
-/// `POST /anuncios/{id}/replicar-correo` para llenar la bandeja simulada de los estudiantes.
+/// Los publica el docente del aula; si marca Â«importanteÂ», la app llama a
+/// `POST /anuncios/{id}/replicar-correo` para llenar la bandeja de los estudiantes.
 class AnunciosPage extends ConsumerStatefulWidget {
   const AnunciosPage({super.key, required this.aulaId, required this.puedePublicar});
 
@@ -125,7 +125,7 @@ class _AnunciosPageState extends ConsumerState<AnunciosPage> {
             if (!_cargando && _error == null && _anuncios.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('Todavía no hay anuncios en este aula.'),
+                child: Text('TodavÃ­a no hay anuncios en este aula.'),
               ),
             for (final anuncio in _anuncios)
               Card(
@@ -158,7 +158,7 @@ class _AnunciosPageState extends ConsumerState<AnunciosPage> {
                       const SizedBox(height: 8),
                       Text(
                         '${anuncio.autorNombre}'
-                        '${anuncio.creadoEn == null ? '' : ' · ${fechaHoraCorta(anuncio.creadoEn)}'}',
+                        '${anuncio.creadoEn == null ? '' : ' Â· ${fechaHoraCorta(anuncio.creadoEn)}'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -202,7 +202,7 @@ class _DialogoAnuncioState extends State<_DialogoAnuncio> {
             TextField(
               controller: _titulo,
               maxLength: 120,
-              decoration: const InputDecoration(labelText: 'Título'),
+              decoration: const InputDecoration(labelText: 'TÃ­tulo'),
             ),
             TextField(
               controller: _cuerpo,

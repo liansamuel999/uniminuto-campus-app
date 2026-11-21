@@ -72,9 +72,21 @@ class _CambiarContrasenaDialogState extends ConsumerState<CambiarContrasenaDialo
               controller: _nueva,
               enabled: !_guardando,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Nueva contraseña'),
-              validator: (valor) =>
-                  (valor == null || valor.length < 8) ? 'Mínimo 8 caracteres' : null,
+              decoration: const InputDecoration(
+                labelText: 'Nueva contraseña',
+                helperText: 'Mínimo 8 caracteres, con letras, números y símbolos.',
+              ),
+              validator: (valor) {
+                final nueva = valor ?? '';
+                if (nueva.length < 8) return 'Mínimo 8 caracteres';
+                if (!RegExp(r'[A-Za-z]').hasMatch(nueva)) return 'Debe incluir al menos una letra';
+                if (!RegExp(r'\d').hasMatch(nueva)) return 'Debe incluir al menos un número';
+                if (!RegExp(r'[^A-Za-z0-9]').hasMatch(nueva)) {
+                  return 'Debe incluir al menos un símbolo';
+                }
+                if (nueva == _actual.text) return 'La nueva contraseña debe ser diferente a la actual';
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(

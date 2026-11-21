@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -13,7 +13,7 @@ class _Acceso {
   final String ruta;
 }
 
-/// Inicio con accesos rápidos **distintos por rol**; en móvil solo se muestra el título.
+/// Inicio con accesos rÃ¡pidos **distintos por rol**; en mÃ³vil solo se muestra el tÃ­tulo.
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -22,18 +22,18 @@ class HomePage extends ConsumerWidget {
     const horario = _Acceso('Horario', Icons.calendar_month_outlined, '/horario');
     const notas = _Acceso('Mis notas', Icons.grading_outlined, '/notas');
     const asignaturas = _Acceso('Mis asignaturas', Icons.menu_book_outlined, '/asignaturas');
-    const bandeja = _Acceso('Bandeja simulada', Icons.mark_email_unread_outlined, '/correos');
+    const bandeja = _Acceso('Bandeja', Icons.mark_email_unread_outlined, '/correos');
     const reservas = _Acceso('Reservas', Icons.event_seat_outlined, '/reservas');
     const incidencias = _Acceso('Incidencias', Icons.report_outlined, '/incidencias');
     const perfil = _Acceso('Mi perfil', Icons.person_outline, '/perfil');
     const adminAcademico = _Acceso(
-      'Administración académica',
+      'AdministraciÃ³n acadÃ©mica',
       Icons.admin_panel_settings_outlined,
       '/admin-academico',
     );
     const miQr = _Acceso('Mi QR de ingreso', Icons.qr_code_2_outlined, '/carnet');
-    const gestionIncidencias = _Acceso('Gestión de incidencias', Icons.support_agent_outlined, '/incidencias');
-    const auditoria = _Acceso('Auditoría', Icons.shield_outlined, '/auditoria');
+    const gestionIncidencias = _Acceso('GestiÃ³n de incidencias', Icons.support_agent_outlined, '/incidencias');
+    const auditoria = _Acceso('AuditorÃ­a', Icons.shield_outlined, '/auditoria');
 
     switch (rol) {
       case 'DOCENTE':
@@ -41,7 +41,7 @@ class HomePage extends ConsumerWidget {
       case 'ADMIN_ACADEMICO':
         return [adminAcademico, miQr, incidencias, perfil];
       case 'ADMIN_ESPACIOS':
-        // Rol absorbido por la administración académica (D-85): se conserva por compatibilidad.
+        // Rol absorbido por la administraciÃ³n acadÃ©mica (D-85): se conserva por compatibilidad.
         return [adminAcademico, miQr, incidencias, perfil];
       case 'SOPORTE':
         return [gestionIncidencias, perfil];
@@ -50,7 +50,7 @@ class HomePage extends ConsumerWidget {
       case 'SEGURIDAD':
         return [miQr, incidencias, perfil];
       default:
-        // Estudiante: primero lo que más usa (aulas y horario), bandeja después.
+        // Estudiante: primero lo que mÃ¡s usa (aulas y horario), bandeja despuÃ©s.
         return [aulas, horario, notas, asignaturas, bandeja, reservas, incidencias, perfil];
     }
   }
@@ -59,15 +59,15 @@ class HomePage extends ConsumerWidget {
     if (sesion == null) return '';
     if (sesion.roles.contains('ESTUDIANTE')) {
       final programa = sesion.perfil.programa?.nombre ?? 'Sin programa';
-      final codigo = sesion.perfil.codigoInstitucional ?? 'Sin código';
-      return '$programa · $codigo';
+      final codigo = sesion.perfil.codigoInstitucional ?? 'Sin cÃ³digo';
+      return '$programa Â· $codigo';
     }
     return switch (rol) {
       'DOCENTE' => 'Portal docente',
-      'ADMIN_ACADEMICO' => 'Administración académica',
-      'ADMIN_ESPACIOS' => 'Administración académica',
+      'ADMIN_ACADEMICO' => 'AdministraciÃ³n acadÃ©mica',
+      'ADMIN_ESPACIOS' => 'AdministraciÃ³n acadÃ©mica',
       'SOPORTE' => 'Soporte',
-      'AUDITOR' => 'Auditoría',
+      'AUDITOR' => 'AuditorÃ­a',
       'SEGURIDAD' => 'Personal de seguridad',
       _ => 'Personal universitario',
     };

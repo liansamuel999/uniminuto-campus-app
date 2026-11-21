@@ -22,19 +22,85 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _correo = TextEditingController();
   final _contrasena = TextEditingController();
+  final _respuestaCaptcha = TextEditingController();
   bool _ocultarContrasena = true;
   bool _enviando = false;
+  bool _verificandoCaptcha = false;
+  bool _captchaVerificado = false;
+  String? _captchaId;
+  String? _captchaToken;
+  String? _captchaPregunta;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarCaptcha();
+  }
 
   @override
   void dispose() {
     _correo.dispose();
     _contrasena.dispose();
+    _respuestaCaptcha.dispose();
     super.dispose();
+  }
+
+  Future<void> _cargarCaptcha() async {
+    try {
+      final datos = await ref.read(apiClientProvider).postJson('/auth/captcha');
+      if (!mounted) return;
+      setState(() {
+        _captchaId = '${datos['id']}';
+        _captchaToken = '${datos['token']}';
+        _captchaPregunta = '${datos['pregunta']}';
+        _captchaVerificado = false;
+        _respuestaCaptcha.clear();
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudo cargar la verificación de seguridad.');
+    }
+  }
+
+  Future<void> _verificarCaptcha() async {
+    if (_captchaId == null || _captchaToken == null) return;
+    final respuesta = int.tryParse(_respuestaCaptcha.text.trim());
+    if (respuesta == null) {
+      setState(() => _error = 'Escribe la respuesta de la verificación.');
+      return;
+    }
+    setState(() {
+      _verificandoCaptcha = true;
+      _error = null;
+    });
+    try {
+      await ref.read(apiClientProvider).postJson('/auth/captcha/verificar', cuerpo: {
+        'id': _captchaId,
+        'respuesta': respuesta,
+        'token': _captchaToken,
+      });
+      if (mounted) {
+        setState(() {
+          _captchaVerificado = true;
+          _error = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Respuesta incorrecta. Solicita una nueva verificación.');
+        await _cargarCaptcha();
+      }
+    } finally {
+      if (mounted) setState(() => _verificandoCaptcha = false);
+    }
   }
 
   Future<void> _ingresar() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_captchaVerificado) {
+      setState(() => _error = 'Resuelve la verificación de seguridad antes de entrar.');
+      return;
+    }
     setState(() {
       _enviando = true;
       _error = null;
@@ -44,8 +110,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // La navegación la resuelve el router al cambiar el estado de sesión.
     } on ErrorAutenticacion catch (error) {
       if (mounted) setState(() => _error = error.mensaje);
+      await _cargarCaptcha();
     } catch (_) {
       if (mounted) setState(() => _error = 'Correo o contraseña incorrectos.');
+      await _cargarCaptcha();
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -145,9 +213,75 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Text(_error!, style: TextStyle(color: colores.onErrorContainer)),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Verificación de seguridad',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          if (_captchaVerificado)
+                            Row(
+                              children: [
+                                Icon(Icons.verified_outlined, color: colores.primary),
+                                const SizedBox(width: 8),
+                                const Expanded(child: Text('Verificación completada.')),
+                              ],
+                            )
+                          else ...[
+                            Text(_captchaPregunta ?? 'Cargando verificación…'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _respuestaCaptcha,
+                                    enabled: !_verificandoCaptcha && _captchaPregunta != null,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Respuesta',
+                                      isDense: true,
+                                    ),
+                                    onSubmitted: (_) => _verificarCaptcha(),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: _verificandoCaptcha || _captchaPregunta == null
+                                      ? null
+                                      : _verificarCaptcha,
+                                  child: _verificandoCaptcha
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Text('Verificar'),
+                                ),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _verificandoCaptcha ? null : _cargarCaptcha,
+                                child: const Text('Otra pregunta'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: (_enviando || !firebaseListo) ? null : _ingresar,
+                    onPressed: (_enviando || !firebaseListo || !_captchaVerificado) ? null : _ingresar,
                     child: _enviando
                         ? const SizedBox(
                             height: 20,

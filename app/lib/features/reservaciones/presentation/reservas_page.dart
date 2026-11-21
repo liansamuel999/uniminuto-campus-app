@@ -219,7 +219,10 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                             dia.day == _diaSeleccionado.day,
                         esHoy: dia.year == _hoy.year && dia.month == _hoy.month && dia.day == _hoy.day,
                         etiqueta: _diaSemana(dia),
-                        onTap: () => setState(() => _diaSeleccionado = dia),
+                        habilitado: !dia.isBefore(DateTime(_hoy.year, _hoy.month, _hoy.day)),
+                        onTap: dia.isBefore(DateTime(_hoy.year, _hoy.month, _hoy.day))
+                            ? null
+                            : () => setState(() => _diaSeleccionado = dia),
                       ),
                     ),
                   ),
@@ -337,23 +340,27 @@ class _BotonDia extends StatelessWidget {
     required this.esHoy,
     required this.etiqueta,
     required this.onTap,
+    this.habilitado = true,
   });
 
   final DateTime dia;
   final bool seleccionado;
   final bool esHoy;
   final String etiqueta;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool habilitado;
 
   @override
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
-    return Material(
-      color: seleccionado ? colores.primary : colores.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
+    return Opacity(
+      opacity: habilitado ? 1 : 0.35,
+      child: Material(
+        color: seleccionado ? colores.primary : colores.surface,
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
         child: Container(
           height: 58,
           padding: const EdgeInsets.symmetric(vertical: 4),
@@ -384,7 +391,8 @@ class _BotonDia extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

@@ -149,7 +149,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                             ],
                           ),
                         ),
-                        if (!esEstudiante)
+                        if (esEstudiante)
                           IconButton(
                             tooltip: 'Editar perfil',
                             onPressed: () => showDialog<void>(

@@ -200,6 +200,19 @@ Académico), **Espacios y horarios** (Admin de Espacios), **Gestión de incidenc
 - **Demo reproducible**: credenciales, recorrido por fases y solución de problemas en
   [`docs/guia-demo.md`](docs/guia-demo.md).
 
+## Correcciones y mejoras de la revisión local
+
+- **Próximas entregas:** se muestran de 5 en 5 con navegación por páginas; ya no se corta la lista.
+- **Notas:** cada corte muestra su fecha de cierre; la definitiva sigue oculta hasta que cierran todos los cortes.
+- **Reservas:** no se permiten fechas pasadas y las reservas vencidas dejan de listarse.
+- **Contraseña:** mínimo 8 caracteres con letras, números y símbolos; no puede repetir la actual.
+- **Bandeja:** anuncios del aula y mensajes entre estudiantes/docentes que comparten curso (`GET/POST /mensajes`, contactos y marcado de leído).
+- **Cursos nuevos:** crean aula, cortes y unidades; aparecen de inmediato en Aulas. La inscripción filtra por programa del curso.
+- **Horarios:** `POST /admin/grupos/{id}/generar-horario` genera días y salones por créditos y turnos del docente, sin cruzar salón, docente ni estudiantes. Los conflictos también se validan al mover un horario a mano.
+- **Seguridad:** captcha aritmético validado en la API antes del login, rate limit y bloqueo de cambio de nombre para personal no estudiante.
+- **Analítica:** pestaña del Admin Académico con ETL bajo demanda; escribe JSONL en `analitica/etl/` y métricas en SQL.
+- **Semilla:** talleres y cuestionarios variados (algunos sin responder en los tres cortes), turnos docentes distintos y sin choques de horario.
+
 ## Pruebas
 
 ```bash

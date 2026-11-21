@@ -118,6 +118,16 @@ class ApiClient {
     }
   }
 
+  /// POST que devuelve una lista JSON (p. ej. horarios generados).
+  Future<List<dynamic>> postList(String ruta, {Object? cuerpo}) async {
+    try {
+      final respuesta = await _dio.post<List<dynamic>>(ruta, data: cuerpo);
+      return respuesta.data ?? const [];
+    } on DioException catch (error) {
+      throw _traducir(error);
+    }
+  }
+
   /// Ejecuta la petición y homogeneiza los errores en [ApiException] (D-17).
   Future<Map<String, dynamic>> _ejecutar(
     Future<Response<Map<String, dynamic>>> Function() peticion,
