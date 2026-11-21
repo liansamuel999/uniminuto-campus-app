@@ -53,7 +53,9 @@ class RepositorioAdmin {
 
   Future<Map<String, dynamic>> analitica() => _api.getJson('/admin/analitica');
 
-  Future<Map<String, dynamic>> ejecutarEtl() => _api.postJson('/admin/analitica/etl');
+  Future<Map<String, dynamic>> ejecutarInforme() => _api.postJson('/admin/analitica/actualizar');
+
+  Future<Map<String, dynamic>> exportarInforme() => _api.getJson('/admin/analitica/export');
 
   Future<Map<String, dynamic>> actualizarGrupo(String id, Map<String, Object?> datos) =>
       _api.putJson('/grupos/$id', cuerpo: datos);

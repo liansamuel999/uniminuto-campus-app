@@ -166,6 +166,7 @@ class _CuestionarioIntroPageState extends ConsumerState<CuestionarioIntroPage> {
     final colores = Theme.of(context).colorScheme;
     final yaRespondido = _cuestionario?['yaRespondido'] == true;
     final preguntas = (_cuestionario?['preguntas'] as List<dynamic>? ?? const []).length;
+    final cerrado = widget.cierraEn != null && DateTime.now().isAfter(widget.cierraEn!);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Cuestionario')),
@@ -257,17 +258,21 @@ class _CuestionarioIntroPageState extends ConsumerState<CuestionarioIntroPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: colores.tertiaryContainer.withValues(alpha: 0.5),
+                color: cerrado
+                    ? colores.errorContainer.withValues(alpha: 0.5)
+                    : colores.tertiaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                'Tienes un único intento. Si sales antes de enviarlo, no se registra y podrás '
-                'volver a entrar; una vez enviado no se puede repetir.',
+              child: Text(
+                cerrado
+                    ? 'El cuestionario cerró${widget.cierraEn == null ? '' : ' el ${fechaHoraCorta(widget.cierraEn)}'}. Ya no se aceptan respuestas.'
+                    : 'Tienes un único intento. Si sales antes de enviarlo, no se registra y podrás '
+                        'volver a entrar; una vez enviado no se puede repetir.',
               ),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _cuestionario == null ? null : _iniciar,
+              onPressed: _cuestionario == null || cerrado ? null : _iniciar,
               icon: const Icon(Icons.play_arrow),
               label: const Text('Iniciar intento'),
             ),

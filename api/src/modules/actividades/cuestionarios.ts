@@ -177,8 +177,9 @@ export function crearRepositorioCuestionarios(pool: Pool): RepositorioCuestionar
           nota_maxima: string;
           corte_id: string;
           inscripcion_id: string;
+          cierra_en: string | Date | null;
         }>(
-          `SELECT a.nota_maxima, a.corte_id, i.id AS inscripcion_id
+          `SELECT a.nota_maxima, a.corte_id, a.cierra_en, i.id AS inscripcion_id
            FROM actividad a
            JOIN unidad un ON un.id = a.unidad_id
            JOIN aula au ON au.id = un.aula_id
@@ -190,6 +191,12 @@ export function crearRepositorioCuestionarios(pool: Pool): RepositorioCuestionar
         );
         const fila = contexto.rows[0];
         if (!fila) throw errores.noEncontrado('El cuestionario no existe o no estás inscrito');
+        if (fila.cierra_en) {
+          const cierra = fila.cierra_en instanceof Date ? fila.cierra_en : new Date(fila.cierra_en);
+          if (Date.now() > cierra.getTime()) {
+            throw errores.conflicto('El cuestionario ya cerró: no se aceptan más respuestas');
+          }
+        }
 
         const preguntas = await cliente.query<{ id: string }>(
           'SELECT id FROM pregunta WHERE actividad_id = $1 ORDER BY orden',

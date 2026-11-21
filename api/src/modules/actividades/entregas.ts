@@ -85,6 +85,12 @@ export function crearRepositorioEntregas(pool: Pool, env: Env): RepositorioEntre
             : new Date(fila.cierra_en)
           : new Date(ahora.getTime() + 365 * 86_400_000);
 
+        // Cierre estricto: una actividad vencida no acepta entregas ni reentregas, aunque el
+        // cliente haya preparado la entrega antes o exista un período de gracia configurado.
+        if (ahora.getTime() > cierra.getTime()) {
+          throw errores.conflicto('La actividad ya cerró: no se aceptan más entregas');
+        }
+
         const evaluacion = calcularEstadoEntrega({
           creadaEnCliente: datos.creadaEnCliente,
           cierraEn: cierra,

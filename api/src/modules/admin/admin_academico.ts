@@ -19,6 +19,7 @@ export interface Asignatura {
   codigo: string;
   nombre: string;
   creditos: number;
+  semestre: number;
   programaId: string | null;
   programa: string | null;
 }
@@ -28,6 +29,7 @@ export interface Grupo {
   asignaturaId: string;
   asignatura: string;
   codigoAsignatura: string;
+  semestre: number;
   programaId: string | null;
   programa: string | null;
   /** Código único del curso (NRC o equivalente): es lo que se muestra. */
@@ -76,11 +78,18 @@ export interface RepositorioAdminAcademico {
     codigo: string;
     nombre: string;
     creditos: number;
+    semestre: number;
     programaId?: string | null;
   }): Promise<Asignatura>;
   actualizarAsignatura(
     id: string,
-    datos: Partial<{ codigo: string; nombre: string; creditos: number; programaId: string | null }>,
+    datos: Partial<{
+      codigo: string;
+      nombre: string;
+      creditos: number;
+      semestre: number;
+      programaId: string | null;
+    }>,
   ): Promise<Asignatura | null>;
   eliminarAsignatura(id: string): Promise<boolean>;
   listarGrupos(
@@ -138,7 +147,7 @@ async function registrarAuditoria(
 
 const CONSULTA_GRUPO = `
   SELECT g.id, g.asignatura_id, asg.nombre AS asignatura, asg.codigo AS codigo_asignatura,
-         asg.programa_id, pr.nombre AS programa,
+         asg.semestre, asg.programa_id, pr.nombre AS programa,
          g.codigo_curso, g.periodo_id, p.codigo AS periodo, g.docente_id,
          d.nombres || ' ' || d.apellidos AS docente, g.numero_grupo,
          (SELECT COUNT(*)::int FROM inscripcion i
@@ -184,6 +193,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignatura_id: string;
     asignatura: string;
     codigo_asignatura: string;
+    semestre: number;
     programa_id: string | null;
     programa: string | null;
     codigo_curso: string;
@@ -198,6 +208,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     asignaturaId: fila.asignatura_id,
     asignatura: fila.asignatura,
     codigoAsignatura: fila.codigo_asignatura,
+    semestre: Number(fila.semestre),
     programaId: fila.programa_id,
     programa: fila.programa,
     codigoCurso: fila.codigo_curso,
@@ -311,15 +322,16 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
 
     async listarAsignaturas() {
       const resultado = await pool.query(
-        `SELECT a.id, a.codigo, a.nombre, a.creditos, a.programa_id, p.nombre AS programa
+        `SELECT a.id, a.codigo, a.nombre, a.creditos, a.semestre, a.programa_id, p.nombre AS programa
          FROM asignatura a LEFT JOIN programa p ON p.id = a.programa_id
-         ORDER BY a.nombre`,
+         ORDER BY p.nombre, a.semestre, a.nombre`,
       );
       return resultado.rows.map((fila) => ({
         id: fila.id,
         codigo: fila.codigo,
         nombre: fila.nombre,
         creditos: Number(fila.creditos),
+        semestre: Number(fila.semestre),
         programaId: fila.programa_id,
         programa: fila.programa,
       }));
@@ -328,9 +340,10 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
     async crearAsignatura(datos) {
       try {
         const resultado = await pool.query(
-          `INSERT INTO asignatura (codigo, nombre, creditos, programa_id) VALUES ($1, $2, $3, $4)
-           RETURNING id, codigo, nombre, creditos, programa_id`,
-          [datos.codigo, datos.nombre, datos.creditos, datos.programaId ?? null],
+          `INSERT INTO asignatura (codigo, nombre, creditos, semestre, programa_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, codigo, nombre, creditos, semestre, programa_id`,
+          [datos.codigo, datos.nombre, datos.creditos, datos.semestre, datos.programaId ?? null],
         );
         const fila = resultado.rows[0]!;
         const programa = fila.programa_id
@@ -341,6 +354,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
           codigo: fila.codigo,
           nombre: fila.nombre,
           creditos: Number(fila.creditos),
+          semestre: Number(fila.semestre),
           programaId: fila.programa_id,
           programa: programa?.rows[0]?.nombre ?? null,
         };
@@ -358,14 +372,16 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
              codigo = COALESCE($2, codigo),
              nombre = COALESCE($3, nombre),
              creditos = COALESCE($4, creditos),
-             programa_id = CASE WHEN $5::boolean THEN $6::uuid ELSE programa_id END
+             semestre = COALESCE($5, semestre),
+             programa_id = CASE WHEN $6::boolean THEN $7::uuid ELSE programa_id END
            WHERE id = $1
-           RETURNING id, codigo, nombre, creditos, programa_id`,
+           RETURNING id, codigo, nombre, creditos, semestre, programa_id`,
           [
             id,
             datos.codigo ?? null,
             datos.nombre ?? null,
             datos.creditos ?? null,
+            datos.semestre ?? null,
             datos.programaId !== undefined,
             datos.programaId ?? null,
           ],
@@ -380,6 +396,7 @@ export function crearRepositorioAdminAcademico(pool: Pool): RepositorioAdminAcad
           codigo: fila.codigo,
           nombre: fila.nombre,
           creditos: Number(fila.creditos),
+          semestre: Number(fila.semestre),
           programaId: fila.programa_id,
           programa: programa?.rows[0]?.nombre ?? null,
         };
@@ -687,6 +704,7 @@ const esquemaAsignatura = z
     codigo: z.string().trim().min(2).max(20),
     nombre: z.string().trim().min(3).max(120),
     creditos: z.number().int().min(1).max(10),
+    semestre: z.number().int().min(1).max(10),
     programaId: z.string().uuid().nullable().optional(),
   })
   .strict();

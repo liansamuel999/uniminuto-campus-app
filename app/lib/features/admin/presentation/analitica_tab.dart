@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/app_providers.dart';
@@ -47,11 +48,11 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
       _error = null;
     });
     try {
-      final datos = await ref.read(repositorioAdminProvider).ejecutarEtl();
+      final datos = await ref.read(repositorioAdminProvider).ejecutarInforme();
       if (mounted) {
         setState(() => _resumen = datos);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ETL ejecutado: datos procesados y agregados actualizados.')),
+          const SnackBar(content: Text('Informe actualizado correctamente.')),
         );
       }
     } on ApiException catch (error) {
@@ -59,6 +60,27 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
     } finally {
       if (mounted) setState(() => _ejecutando = false);
     }
+  }
+
+  Future<void> _descargar() async {
+    try {
+      final datos = await ref.read(repositorioAdminProvider).exportarInforme();
+      final url = '${datos['url']}';
+      if (url.isEmpty) {
+        _aviso('El informe todavía no está disponible.');
+        return;
+      }
+      final abierto = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!abierto && mounted) _aviso('No se pudo abrir la descarga del informe.');
+    } on ApiException catch (error) {
+      if (mounted) _aviso(error.mensaje);
+    } catch (_) {
+      if (mounted) _aviso('No se pudo descargar el informe.');
+    }
+  }
+
+  void _aviso(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
   }
 
   @override
@@ -75,12 +97,31 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Indicadores académicos'),
+        actions: [
+          IconButton(
+            tooltip: 'Descargar informe',
+            onPressed: _ejecutando ? null : _descargar,
+            icon: const Icon(Icons.download_outlined),
+          ),
+          IconButton(
+            tooltip: 'Actualizar informe',
+            onPressed: _ejecutando ? null : _ejecutar,
+            icon: _ejecutando
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _ejecutando ? null : _ejecutar,
-        icon: _ejecutando
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.play_arrow),
-        label: const Text('Ejecutar ETL'),
+        icon: const Icon(Icons.insights_outlined),
+        label: const Text('Actualizar informe'),
       ),
       body: RefreshIndicator(
         onRefresh: _cargar,
@@ -88,13 +129,12 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
           children: [
             Text(
-              'Data lake y analítica académica',
+              'Resumen de la operación académica',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
             Text(
-              'El ETL extrae datos operativos, escribe un archivo JSONL en el bucket y publica '
-              'agregados para el panel. Es la capa curada del data lake.',
+              'Consulta los indicadores consolidados de programas, cursos, entregas e incidencias.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -111,11 +151,13 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
             if (ejecucion != null)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.storage_outlined),
-                  title: Text('Última ejecución: ${_fecha('${ejecucion['generadoEn']}')}'),
-                  subtitle: Text(
-                    '${ejecucion['filas']} filas procesadas'
-                    '${ejecucion['objetoKey'] == null ? ' · sin objeto en S3' : ' · ${ejecucion['objetoKey']}'}',
+                  leading: const Icon(Icons.assessment_outlined),
+                  title: Text('Última actualización: ${_fecha('${ejecucion['generadoEn']}')}'),
+                  subtitle: Text('${ejecucion['filas']} registros analizados'),
+                  trailing: IconButton(
+                    tooltip: 'Descargar informe',
+                    onPressed: _descargar,
+                    icon: const Icon(Icons.download_outlined),
                   ),
                 ),
               ),
@@ -123,7 +165,7 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
                 child: Text(
-                  'Todavía no hay agregados. Pulsa «Ejecutar ETL» para procesar los datos de la muestra.',
+                  'Todavía no hay indicadores. Pulsa «Actualizar informe» para generarlos.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -167,7 +209,6 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
         'acceso' => 'Accesos',
         _ => categoria,
       };
-
   String _valor(String categoria, Map<String, dynamic> metrica) {
     final valor = (metrica['valor'] as num?)?.toDouble() ?? 0;
     if (categoria == 'curso') return valor.toStringAsFixed(2);
@@ -177,13 +218,15 @@ class _AnaliticaTabState extends ConsumerState<AnaliticaTab> {
   Widget? _detalle(Map<String, dynamic> metrica) {
     final detalle = metrica['detalle'];
     if (detalle is! Map) return null;
-    if (detalle['estudiantes'] != null) {
+    if (detalle['cursos'] != null) {
+      return Text('${detalle['estudiantes']} estudiantes · ${detalle['cursos']} cursos');
+    }
+    if (detalle['aprobados'] != null) {
       return Text(
-        '${detalle['estudiantes']} estudiantes · ${detalle['aprobados'] ?? 0} aprobados'
+        '${detalle['estudiantes']} estudiantes · ${detalle['aprobados']} aprobados'
         '${detalle['programa'] == null ? '' : ' · ${detalle['programa']}'}',
       );
     }
-    if (detalle['cursos'] != null) return Text('${detalle['cursos']} cursos');
     return null;
   }
 }

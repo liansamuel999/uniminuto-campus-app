@@ -86,7 +86,7 @@ class ApiClient {
         codigo: 'ERROR_SUBIDA',
         mensaje:
             'No se pudo subir el archivo (${error.response?.statusCode ?? 'sin conexión'}). '
-            'Revisa el datalake e inténtalo otra vez.',
+            'Revisa tu conexión e inténtalo otra vez.',
         estado: error.response?.statusCode,
       );
     }

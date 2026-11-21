@@ -190,7 +190,9 @@ class _NotasPageState extends ConsumerState<NotasPage> {
                     ),
                     const Spacer(),
                     Text(
-                      corte['nota'] == null ? 'Sin nota' : (corte['nota'] as num).toStringAsFixed(2),
+                      corte['nota'] == null
+                          ? 'Sin calificar'
+                          : (corte['nota'] as num).toStringAsFixed(2),
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ],

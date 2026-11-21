@@ -29,6 +29,7 @@ export interface ResumenAnalitica {
 export interface RepositorioAnalitica {
   ejecutar(uidActor: string): Promise<ResumenAnalitica>;
   resumen(): Promise<ResumenAnalitica>;
+  exportar(): Promise<{ url: string; expiraEn: string; formato: 'jsonl' | 'csv' }>;
 }
 
 /**
@@ -88,6 +89,49 @@ export function crearRepositorioAnalitica(
 
   return {
     resumen: cargarMetricas,
+
+    async exportar() {
+      if (!s3) throw errores.noEncontrado('El informe no está disponible en este entorno');
+      const resumen = await cargarMetricas();
+      if (!resumen.ejecucion) {
+        throw errores.noEncontrado('Genera el informe antes de descargarlo');
+      }
+      let objetoKey = resumen.ejecucion.objetoKey;
+      let formato: 'jsonl' | 'csv' = 'jsonl';
+      if (!objetoKey) {
+        const lineas = [
+          'categoria,etiqueta,valor',
+          ...resumen.metricas.map((metrica) =>
+            [metrica.categoria, metrica.etiqueta.replaceAll(',', ';'), metrica.valor]
+              .map((valor) => `${valor}`)
+              .join(','),
+          ),
+        ];
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+        objetoKey = `analitica/export/informe-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: objetoKey,
+            ContentType: 'text/csv; charset=utf-8',
+            Body: Buffer.from(lineas.join('\n'), 'utf8'),
+          }),
+        );
+        formato = 'csv';
+      }
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const url = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: bucket, Key: objetoKey }),
+        { expiresIn: 15 * 60 },
+      );
+      return {
+        url,
+        expiraEn: new Date(Date.now() + 15 * 60_000).toISOString(),
+        formato: objetoKey.endsWith('.csv') ? 'csv' : formato,
+      };
+    },
 
     async ejecutar(_uidActor) {
       const programas = await pool.query<{
@@ -279,7 +323,9 @@ export function registrarRutasAnalitica(app: FastifyInstance, repo: RepositorioA
 
   app.get('/api/v1/admin/analitica', { preHandler: admin }, async () => repo.resumen());
 
-  app.post('/api/v1/admin/analitica/etl', { preHandler: admin }, async (peticion) =>
+  app.get('/api/v1/admin/analitica/export', { preHandler: admin }, async () => repo.exportar());
+
+  app.post('/api/v1/admin/analitica/actualizar', { preHandler: admin }, async (peticion) =>
     repo.ejecutar(peticion.actor!.uid),
   );
 }

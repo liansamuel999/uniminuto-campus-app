@@ -129,6 +129,11 @@ class _TareaPageState extends ConsumerState<TareaPage> {
   }
 
   Future<void> _enviar({required bool soloGuardar}) async {
+    final cierra = DateTime.tryParse('${widget.actividad['cierraEn']}');
+    if (cierra != null && DateTime.now().isAfter(cierra)) {
+      setState(() => _mensaje = 'La actividad ya cerró: no se aceptan más entregas.');
+      return;
+    }
     final texto = _texto.text.trim();
     if (texto.length < 5 && _adjuntos.isEmpty) {
       setState(() => _mensaje = 'Escribe una respuesta o adjunta un archivo.');
@@ -224,6 +229,7 @@ class _TareaPageState extends ConsumerState<TareaPage> {
     final actividad = widget.actividad;
     final pendientes = ref.read(colaEntregasProvider).pendientes().length;
     final cierra = DateTime.tryParse('${actividad['cierraEn']}');
+    final cerrada = cierra != null && DateTime.now().isAfter(cierra);
     final colores = Theme.of(context).colorScheme;
     final yaEntregada = _entregaPrevia != null;
 
@@ -254,7 +260,10 @@ class _TareaPageState extends ConsumerState<TareaPage> {
                       Text('${actividad['peso']}% del corte ${actividad['corte']}'),
                       const Spacer(),
                       if (cierra != null)
-                        Text('Vence en ${tiempoRestante(cierra)}', style: TextStyle(color: colores.primary)),
+                        Text(
+                          cerrada ? 'Actividad cerrada' : 'Vence en ${tiempoRestante(cierra)}',
+                          style: TextStyle(color: cerrada ? colores.error : colores.primary),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -325,6 +334,27 @@ class _TareaPageState extends ConsumerState<TareaPage> {
           ],
           if (_cargandoEstado)
             const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
+          if (cerrada)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: colores.errorContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_clock_outlined, color: colores.onErrorContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'La actividad cerró. Ya no se aceptan entregas nuevas ni cambios.',
+                      style: TextStyle(color: colores.onErrorContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (yaEntregada) ...[
             Container(
               padding: const EdgeInsets.all(14),
@@ -377,7 +407,7 @@ class _TareaPageState extends ConsumerState<TareaPage> {
             ),
             const SizedBox(height: 12),
           ],
-          if (!yaEntregada || _puedeEditar) _formulario(actualizando: yaEntregada),
+          if (!cerrada && (!yaEntregada || _puedeEditar)) _formulario(actualizando: yaEntregada),
           if (_mensaje != null) ...[
             const SizedBox(height: 8),
             Text(_mensaje!, style: TextStyle(color: colores.onSurfaceVariant)),

@@ -9,7 +9,6 @@ import '../../../core/session/session_controller.dart';
 import '../../../core/widgets/aviso_muestra.dart';
 import '../domain/perfil_usuario.dart';
 import 'cambiar_contrasena_dialog.dart';
-import 'editar_perfil_dialog.dart';
 
 /// Perfil propio (§7.7): datos, foto, roles y acciones de cuenta.
 ///
@@ -149,15 +148,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                             ],
                           ),
                         ),
-                        if (esEstudiante)
-                          IconButton(
-                            tooltip: 'Editar perfil',
-                            onPressed: () => showDialog<void>(
-                              context: context,
-                              builder: (_) => EditarPerfilDialog(perfil: perfil),
-                            ),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
+                        const SizedBox.shrink(),
                       ],
                     ),
                     const SizedBox(height: 14),

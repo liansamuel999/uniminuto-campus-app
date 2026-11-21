@@ -83,7 +83,6 @@ import {
 } from './modules/comunicacion/firestore_comunicacion.js';
 import { crearRepositorioCalificaciones, registrarRutasCalificaciones, type RepositorioCalificaciones } from './modules/calificaciones/calificaciones.js';
 import { crearVerificador, type TokenVerifier } from './modules/auth/verifier.js';
-import { registrarRutasCaptcha } from './modules/auth/captcha.js';
 import { registrarPluginAuth } from './plugins/auth.js';
 import { registrarManejadorErrores } from './lib/errors.js';
 
@@ -195,7 +194,6 @@ export async function construirApp(opciones: OpcionesApp): Promise<FastifyInstan
   });
 
   registrarPluginAuth(app, opciones.verificador ?? (await crearVerificador(env)));
-  registrarRutasCaptcha(app);
 
   const pool = crearPool(env.DATABASE_URL);
   const clienteS3 = crearClienteS3(env);

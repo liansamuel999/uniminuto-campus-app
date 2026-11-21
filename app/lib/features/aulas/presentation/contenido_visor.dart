@@ -101,7 +101,7 @@ Future<void> abrirContenido(
   } catch (_) {
     if (context.mounted) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('No se pudo obtener el archivo. ¿Está el datalake disponible?')),
+        const SnackBar(content: Text('No se pudo abrir el archivo. Inténtalo de nuevo.')),
       );
     }
   }

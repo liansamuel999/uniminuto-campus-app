@@ -106,7 +106,7 @@ class _ForoPageState extends ConsumerState<ForoPage> {
           children: [
             Text(widget.titulo, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
-            Text('Hilos de discusión del aula · datos de muestra',
+            Text('Hilos de discusión del aula',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 12),
             if (_cargando)

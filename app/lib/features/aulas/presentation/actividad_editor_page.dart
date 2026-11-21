@@ -206,7 +206,7 @@ class _ActividadEditorPageState extends ConsumerState<ActividadEditorPage> {
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = 'No se pudo adjuntar el archivo: ${error.mensaje}');
     } catch (_) {
-      if (mounted) setState(() => _error = 'No se pudo adjuntar el archivo al datalake.');
+      if (mounted) setState(() => _error = 'No se pudo adjuntar el archivo.');
     } finally {
       if (mounted) setState(() => _subiendoRecurso = false);
     }

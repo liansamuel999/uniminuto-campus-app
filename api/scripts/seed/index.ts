@@ -954,13 +954,31 @@ function programaDeAsignatura(codigo: string): string {
   return 'Ingeniería de Sistemas';
 }
 
+function semestreDeAsignatura(codigo: string): number {
+  const mapa: Record<string, number> = {
+    'IS-101': 1,
+    'IS-201': 2,
+    'IS-301': 3,
+    'IS-401': 4,
+    'IS-501': 5,
+    'MAT-101': 1,
+    'ADM-101': 1,
+    'ADM-201': 2,
+    'ADM-301': 3,
+    'PSI-101': 1,
+    'PSI-201': 2,
+    'PSI-301': 3,
+  };
+  return mapa[codigo] ?? 1;
+}
+
 /** Elimina cursos y actividades con nombres de prueba creados desde la app en sesiones anteriores. */
 async function limpiarDatosDePrueba(
   cliente: PoolClient,
 ): Promise<{ aulas: string[]; foros: string[] }> {
   const asignaturas = await cliente.query<{ id: string }>(
     `SELECT id FROM asignatura
-     WHERE codigo IN ('1111111', '2221', '2341') OR lower(nombre) IN ('222211', 'lick', 'prueba')`,
+     WHERE codigo IN ('1111111', '2221', '2341', '332') OR lower(nombre) IN ('222211', 'lick', 'prueba', 'prueba2')`,
   );
   const asignaturaIds = asignaturas.rows.map((fila) => fila.id);
   const grupos = asignaturaIds.length
@@ -1015,8 +1033,19 @@ async function limpiarDatosDePrueba(
   }
   if (grupoIds.length > 0) {
     await cliente.query('DELETE FROM horario WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
+    await cliente.query(
+      `DELETE FROM evaluacion_docente WHERE inscripcion_id IN (
+         SELECT id FROM inscripcion WHERE grupo_id = ANY($1::uuid[]))`,
+      [grupoIds],
+    );
+    await cliente.query(
+      `DELETE FROM nota_corte WHERE inscripcion_id IN (
+         SELECT id FROM inscripcion WHERE grupo_id = ANY($1::uuid[]))`,
+      [grupoIds],
+    );
     await cliente.query('DELETE FROM inscripcion WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
     await cliente.query('DELETE FROM aula WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
+    await cliente.query('DELETE FROM corte WHERE grupo_id = ANY($1::uuid[])', [grupoIds]);
     await cliente.query('DELETE FROM grupo WHERE id = ANY($1::uuid[])', [grupoIds]);
   }
   if (asignaturaIds.length > 0) {
@@ -1244,11 +1273,19 @@ async function principal(): Promise<void> {
       if (!asignaturasProcesadas.has(curso.asignatura)) {
         const programaId = programaPorNombre.get(programaDeAsignatura(curso.asignatura)) ?? null;
         await cliente.query(
-          `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio, programa_id)
-           VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO asignatura (codigo, nombre, creditos, requiere_laboratorio, programa_id, semestre)
+           VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, creditos = EXCLUDED.creditos,
-             requiere_laboratorio = EXCLUDED.requiere_laboratorio, programa_id = EXCLUDED.programa_id`,
-          [curso.asignatura, curso.nombre, curso.creditos, curso.requiereLaboratorio, programaId],
+             requiere_laboratorio = EXCLUDED.requiere_laboratorio, programa_id = EXCLUDED.programa_id,
+             semestre = EXCLUDED.semestre`,
+          [
+            curso.asignatura,
+            curso.nombre,
+            curso.creditos,
+            curso.requiereLaboratorio,
+            programaId,
+            semestreDeAsignatura(curso.asignatura),
+          ],
         );
         asignaturasProcesadas.add(curso.asignatura);
       }

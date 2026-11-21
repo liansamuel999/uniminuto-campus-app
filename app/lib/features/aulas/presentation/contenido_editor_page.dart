@@ -311,7 +311,7 @@ class _ContenidoEditorPageState extends ConsumerState<ContenidoEditorPage> {
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
             const SizedBox(height: 6),
-            const Text('Subiendo el archivo al datalake…'),
+            const Text('Subiendo el archivo…'),
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),

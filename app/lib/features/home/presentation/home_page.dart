@@ -13,7 +13,7 @@ class _Acceso {
   final String ruta;
 }
 
-/// Inicio con accesos rÃ¡pidos **distintos por rol**; en mÃ³vil solo se muestra el tÃ­tulo.
+/// Inicio con accesos rápidos **distintos por rol**; en móvil solo se muestra el título.
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -27,13 +27,13 @@ class HomePage extends ConsumerWidget {
     const incidencias = _Acceso('Incidencias', Icons.report_outlined, '/incidencias');
     const perfil = _Acceso('Mi perfil', Icons.person_outline, '/perfil');
     const adminAcademico = _Acceso(
-      'AdministraciÃ³n acadÃ©mica',
+      'Administración académica',
       Icons.admin_panel_settings_outlined,
       '/admin-academico',
     );
     const miQr = _Acceso('Mi QR de ingreso', Icons.qr_code_2_outlined, '/carnet');
-    const gestionIncidencias = _Acceso('GestiÃ³n de incidencias', Icons.support_agent_outlined, '/incidencias');
-    const auditoria = _Acceso('AuditorÃ­a', Icons.shield_outlined, '/auditoria');
+    const gestionIncidencias = _Acceso('Gestión de incidencias', Icons.support_agent_outlined, '/incidencias');
+    const auditoria = _Acceso('Auditoría', Icons.shield_outlined, '/auditoria');
 
     switch (rol) {
       case 'DOCENTE':
@@ -41,7 +41,7 @@ class HomePage extends ConsumerWidget {
       case 'ADMIN_ACADEMICO':
         return [adminAcademico, miQr, incidencias, perfil];
       case 'ADMIN_ESPACIOS':
-        // Rol absorbido por la administraciÃ³n acadÃ©mica (D-85): se conserva por compatibilidad.
+        // Rol absorbido por la administración académica (D-85): se conserva por compatibilidad.
         return [adminAcademico, miQr, incidencias, perfil];
       case 'SOPORTE':
         return [gestionIncidencias, perfil];
@@ -50,7 +50,7 @@ class HomePage extends ConsumerWidget {
       case 'SEGURIDAD':
         return [miQr, incidencias, perfil];
       default:
-        // Estudiante: primero lo que mÃ¡s usa (aulas y horario), bandeja despuÃ©s.
+        // Estudiante: primero lo que más usa (aulas y horario), bandeja después.
         return [aulas, horario, notas, asignaturas, bandeja, reservas, incidencias, perfil];
     }
   }
@@ -59,15 +59,15 @@ class HomePage extends ConsumerWidget {
     if (sesion == null) return '';
     if (sesion.roles.contains('ESTUDIANTE')) {
       final programa = sesion.perfil.programa?.nombre ?? 'Sin programa';
-      final codigo = sesion.perfil.codigoInstitucional ?? 'Sin cÃ³digo';
-      return '$programa Â· $codigo';
+      final codigo = sesion.perfil.codigoInstitucional ?? 'Sin código';
+      return '$programa · $codigo';
     }
     return switch (rol) {
       'DOCENTE' => 'Portal docente',
-      'ADMIN_ACADEMICO' => 'AdministraciÃ³n acadÃ©mica',
-      'ADMIN_ESPACIOS' => 'AdministraciÃ³n acadÃ©mica',
+      'ADMIN_ACADEMICO' => 'Administración académica',
+      'ADMIN_ESPACIOS' => 'Administración académica',
       'SOPORTE' => 'Soporte',
-      'AUDITOR' => 'AuditorÃ­a',
+      'AUDITOR' => 'Auditoría',
       'SEGURIDAD' => 'Personal de seguridad',
       _ => 'Personal universitario',
     };

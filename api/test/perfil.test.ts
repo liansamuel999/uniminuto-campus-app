@@ -85,7 +85,7 @@ describe('GET /api/v1/mi-perfil', () => {
 });
 
 describe('PUT /api/v1/mi-perfil', () => {
-  it('actualiza nombres y apellidos propios', async () => {
+  it('rechaza la edición de nombres y apellidos', async () => {
     const app = await crearApp();
     const respuesta = await app.inject({
       method: 'PUT',
@@ -94,8 +94,8 @@ describe('PUT /api/v1/mi-perfil', () => {
       payload: { nombres: 'Juan P.', apellidos: 'Rojas' },
     });
 
-    expect(respuesta.statusCode).toBe(200);
-    expect(respuesta.json()).toMatchObject({ nombres: 'Juan P.', apellidos: 'Rojas' });
+    expect(respuesta.statusCode).toBe(403);
+    expect(respuesta.json()).toMatchObject({ codigo: 'PROHIBIDO' });
     await app.close();
   });
 

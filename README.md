@@ -207,10 +207,10 @@ Académico), **Espacios y horarios** (Admin de Espacios), **Gestión de incidenc
 - **Reservas:** no se permiten fechas pasadas y las reservas vencidas dejan de listarse.
 - **Contraseña:** mínimo 8 caracteres con letras, números y símbolos; no puede repetir la actual.
 - **Bandeja:** anuncios del aula y mensajes entre estudiantes/docentes que comparten curso (`GET/POST /mensajes`, contactos y marcado de leído).
-- **Cursos nuevos:** crean aula, cortes y unidades; aparecen de inmediato en Aulas. La inscripción filtra por programa del curso.
+- **Cursos nuevos:** crean aula, cortes y unidades; aparecen de inmediato en Aulas. La inscripción filtra por carrera y semestre antes de elegir la materia/curso.
 - **Horarios:** `POST /admin/grupos/{id}/generar-horario` genera días y salones por créditos y turnos del docente, sin cruzar salón, docente ni estudiantes. Los conflictos también se validan al mover un horario a mano.
-- **Seguridad:** captcha aritmético validado en la API antes del login, rate limit y bloqueo de cambio de nombre para personal no estudiante.
-- **Analítica:** pestaña del Admin Académico con ETL bajo demanda; escribe JSONL en `analitica/etl/` y métricas en SQL.
+- **Seguridad:** contraseña fuerte (mínimo 8 caracteres, letras, números y símbolos) y datos de identidad no editables desde la aplicación.
+- **Indicadores:** el panel administrativo resume programas, cursos, entregas e incidencias y permite **descargar el informe**.
 - **Semilla:** talleres y cuestionarios variados (algunos sin responder en los tres cortes), turnos docentes distintos y sin choques de horario.
 
 ## Pruebas

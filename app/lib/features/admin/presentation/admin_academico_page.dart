@@ -348,7 +348,8 @@ class _AsignaturasTabState extends ConsumerState<_AsignaturasTab> {
                 leading: const Icon(Icons.menu_book_outlined),
                 title: Text('${asignatura['nombre']}'),
                 subtitle: Text(
-                  '${asignatura['codigo']} · ${asignatura['creditos']} créditos'
+                  '${asignatura['codigo']} · ${asignatura['creditos']} créditos · '
+                  'Semestre ${asignatura['semestre'] ?? 1}'
                   '${asignatura['programa'] == null ? '' : ' · ${asignatura['programa']}'}',
                 ),
                 trailing: PopupMenuButton<String>(
@@ -380,6 +381,7 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
   late final TextEditingController _codigo = TextEditingController(text: '${widget.actual?['codigo'] ?? ''}');
   late final TextEditingController _nombre = TextEditingController(text: '${widget.actual?['nombre'] ?? ''}');
   late final TextEditingController _creditos = TextEditingController(text: '${widget.actual?['creditos'] ?? 3}');
+  late final TextEditingController _semestre = TextEditingController(text: '${widget.actual?['semestre'] ?? 1}');
   String? _programaId;
 
   @override
@@ -396,6 +398,7 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
     _codigo.dispose();
     _nombre.dispose();
     _creditos.dispose();
+    _semestre.dispose();
     super.dispose();
   }
 
@@ -413,6 +416,11 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
               controller: _creditos,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Créditos'),
+            ),
+            TextField(
+              controller: _semestre,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Semestre'),
             ),
             DropdownButtonFormField<String>(
               initialValue: _programaId,
@@ -433,6 +441,7 @@ class _DialogoAsignaturaState extends State<_DialogoAsignatura> {
             'codigo': _codigo.text.trim(),
             'nombre': _nombre.text.trim(),
             'creditos': int.tryParse(_creditos.text.trim()) ?? 0,
+            'semestre': int.tryParse(_semestre.text.trim()) ?? 1,
             'programaId': _programaId,
           }),
           child: const Text('Guardar'),
@@ -568,6 +577,7 @@ class _GruposTabState extends ConsumerState<_GruposTab> {
                 title: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']}'),
                 subtitle: Text(
                   '${grupo['codigoAsignatura']} · ${grupo['periodo']} · '
+                  'Semestre ${grupo['semestre'] ?? 1} · '
                   '${grupo['programa'] ?? 'Sin programa'} · '
                   '${grupo['docente'] ?? 'Sin docente'} · ${grupo['estudiantes']} estudiantes',
                 ),
@@ -738,6 +748,8 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
   List<Map<String, dynamic>> _estudiantes = const [];
   List<Map<String, dynamic>> _inscripciones = const [];
   String? _grupoId;
+  String? _programaFiltro;
+  int? _semestreFiltro;
   bool _cargando = true;
   String? _error;
 
@@ -756,14 +768,32 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
       final repo = ref.read(repositorioAdminProvider);
       final grupos = await repo.grupos();
       final estudiantes = await repo.usuarios('ESTUDIANTE');
-      final seleccionado = _grupoId ?? (grupos.isEmpty ? null : '${(grupos.first as Map)['id']}');
+      final lista = _aMapas(grupos);
+      String? programa = _programaFiltro;
+      if (programa == null && lista.isNotEmpty) {
+        programa = '${lista.firstWhere((g) => g['programaId'] != null, orElse: () => lista.first)['programaId']}';
+      }
+      int? semestre = _semestreFiltro;
+      if (semestre == null && lista.isNotEmpty) {
+        semestre = int.tryParse('${lista.first['semestre'] ?? 1}') ?? 1;
+      }
+      final filtrados = lista.where((grupo) {
+        if (programa != null && '${grupo['programaId'] ?? ''}' != programa) return false;
+        if (semestre != null && '${grupo['semestre'] ?? 1}' != '$semestre') return false;
+        return true;
+      }).toList();
+      final seleccionado = _grupoId != null && filtrados.any((g) => '${g['id']}' == _grupoId)
+          ? _grupoId
+          : (filtrados.isEmpty ? null : '${filtrados.first['id']}');
       final inscripciones = seleccionado == null
           ? <dynamic>[]
           : await repo.inscripciones(grupoId: seleccionado);
       if (!mounted) return;
       setState(() {
-        _grupos = _aMapas(grupos);
+        _grupos = lista;
         _estudiantes = _aMapas(estudiantes);
+        _programaFiltro = programa;
+        _semestreFiltro = semestre;
         _grupoId = seleccionado;
         _inscripciones = _aMapas(inscripciones);
       });
@@ -833,6 +863,66 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
     return null;
   }
 
+  List<String> get _programasDisponibles {
+    final valores = <String, String>{};
+    for (final grupo in _grupos) {
+      final id = grupo['programaId'];
+      if (id != null) valores['$id'] = '${grupo['programa'] ?? 'Sin programa'}';
+    }
+    return valores.keys.toList();
+  }
+
+  List<Map<String, dynamic>> get _gruposFiltrados {
+    return _grupos.where((grupo) {
+      if (_programaFiltro != null && '${grupo['programaId'] ?? ''}' != _programaFiltro) {
+        return false;
+      }
+      if (_semestreFiltro != null && '${grupo['semestre'] ?? 1}' != '$_semestreFiltro') {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  String _nombrePrograma(String? id) {
+    for (final grupo in _grupos) {
+      if ('${grupo['programaId']}' == id) return '${grupo['programa'] ?? 'Sin programa'}';
+    }
+    return 'Carrera';
+  }
+
+  List<int> get _semestresDisponibles {
+    final valores = <int>{};
+    for (final grupo in _grupos) {
+      if (_programaFiltro != null && '${grupo['programaId'] ?? ''}' != _programaFiltro) continue;
+      valores.add(int.tryParse('${grupo['semestre'] ?? 1}') ?? 1);
+    }
+    return valores.toList()..sort();
+  }
+
+  void _cambiarFiltros({String? programa, int? semestre}) {
+    setState(() {
+      if (programa != null) {
+        _programaFiltro = programa;
+        final disponibles = _semestresDisponibles;
+        if (disponibles.isNotEmpty && !disponibles.contains(_semestreFiltro)) {
+          _semestreFiltro = disponibles.first;
+        }
+      }
+      if (semestre != null) _semestreFiltro = semestre;
+    });
+    final filtrados = _gruposFiltrados;
+    final seleccionado = filtrados.isEmpty ? null : '${filtrados.first['id']}';
+    if (seleccionado != null) {
+      _cambiarGrupo(seleccionado);
+    } else {
+      setState(() {
+        _grupoId = null;
+        _inscripciones = const [];
+      });
+    }
+  }
+
   List<Map<String, dynamic>> get _estudiantesFiltrados {
     final programaId = _grupoActual?['programaId'] as String?;
     if (programaId == null) return _estudiantes;
@@ -887,13 +977,37 @@ class _InscripcionesTabState extends ConsumerState<_InscripcionesTab> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
           DropdownButtonFormField<String>(
-            initialValue: _grupoId,
-            decoration: const InputDecoration(labelText: 'Curso'),
+            initialValue: _programaFiltro,
+            decoration: const InputDecoration(labelText: 'Carrera / programa'),
             items: [
-              for (final grupo in _grupos)
+              for (final programa in _programasDisponibles)
+                DropdownMenuItem(value: programa, child: Text(_nombrePrograma(programa))),
+            ],
+            onChanged: (valor) {
+              if (valor != null) _cambiarFiltros(programa: valor);
+            },
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            initialValue: _semestreFiltro,
+            decoration: const InputDecoration(labelText: 'Semestre'),
+            items: [
+              for (final semestre in _semestresDisponibles)
+                DropdownMenuItem(value: semestre, child: Text('Semestre $semestre')),
+            ],
+            onChanged: (valor) {
+              if (valor != null) _cambiarFiltros(semestre: valor);
+            },
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _grupoId,
+            decoration: const InputDecoration(labelText: 'Materia / curso'),
+            items: [
+              for (final grupo in _gruposFiltrados)
                 DropdownMenuItem(
                   value: '${grupo['id']}',
-                  child: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']} · ${grupo['periodo']}'),
+                  child: Text('${grupo['asignatura']} · Curso ${grupo['codigoCurso']}'),
                 ),
             ],
             onChanged: _cambiarGrupo,

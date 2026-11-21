@@ -155,11 +155,10 @@ export function registrarRutasPerfil(app: FastifyInstance, repositorio: Reposito
 
   app.put('/api/v1/mi-perfil', { preHandler: app.autenticar }, async (peticion) => {
     const cambios = esquemaCambios.parse(peticion.body ?? {});
-    const roles = peticion.actor?.roles ?? [];
     const intentaCambiarIdentidad = cambios.nombres !== undefined || cambios.apellidos !== undefined;
-    if (intentaCambiarIdentidad && !roles.includes('ESTUDIANTE')) {
+    if (intentaCambiarIdentidad) {
       throw errores.prohibido(
-        'Solo los estudiantes pueden cambiar sus nombres. El personal académico y administrativo debe solicitar el cambio a la oficina de registro.',
+        'Los datos de identidad no se editan desde la aplicación. Solicita el cambio a la oficina de registro.',
       );
     }
     const perfil = await repositorio.actualizarPorUid(peticion.actor!.uid, cambios);
