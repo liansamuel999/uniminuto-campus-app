@@ -501,10 +501,28 @@ export function crearRepositorioPlanificador(pool: Pool): RepositorioPlanificado
     },
 
     async planificar() {
+      // Primero completa los cursos que aún no tienen ninguna franja: el botón «Planificar
+      // salones» también debe resolver días y salones de los cursos recién creados.
+      const sinHorario = await pool.query<{ id: string }>(
+        `SELECT g.id FROM grupo g
+         JOIN periodo p ON p.id = g.periodo_id
+         WHERE p.activo
+           AND NOT EXISTS (SELECT 1 FROM horario h WHERE h.grupo_id = g.id)`,
+      );
+      let generados = 0;
+      for (const grupo of sinHorario.rows) {
+        try {
+          const creados = await generarHorarioCompleto(grupo.id);
+          generados += creados.length;
+        } catch {
+          // Si no hay combinación disponible, el resto de la planificación sigue su curso.
+        }
+      }
+
       const [salones, horarios] = await Promise.all([cargarSalones(), cargarHorarios()]);
       const resultado: ResultadoPlanificacion = {
         totalHorarios: horarios.length,
-        asignados: 0,
+        asignados: generados,
         movidos: 0,
         sinSalon: [],
       };
